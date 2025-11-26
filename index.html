@@ -14,46 +14,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="TimeMoney" />
-    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     
     <title>TimeMoney - 時間金錢管理</title>
     
-    <!-- 瀏覽器兼容性檢查 -->
     <script>
-      (function() {
-        try {
-          // 檢查基本 ES6+ 功能
-          eval('const test = () => {};');
-          eval('const {test2} = {};');
-          eval('class TestClass {}');
-          eval('(async () => {})');
-          eval('const test = {}; test?.prop;');
-        } catch (error) {
-          document.addEventListener('DOMContentLoaded', function() {
-            document.body.innerHTML = \`
-              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; background-color: #1f2937; color: white; font-family: Arial, sans-serif; text-align: center;">
-                <div style="background-color: #374151; padding: 40px; border-radius: 16px; max-width: 500px;">
-                  <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #3b82f6, #10b981); border-radius: 16px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold;">TM</div>
-                  <h1 style="font-size: 24px; margin-bottom: 16px;">TimeMoney</h1>
-                  <p style="margin-bottom: 20px; color: #d1d5db;">智慧型時間與金錢管理</p>
-                  <div style="background-color: #fef3c7; color: #92400e; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-                    <strong>瀏覽器版本過舊</strong><br>無法支援此應用程式
-                  </div>
-                  <div style="text-align: left; margin-bottom: 20px; color: #d1d5db;">
-                    <p><strong>請嘗試：</strong></p>
-                    <ul style="margin-left: 20px;">
-                      <li>更新瀏覽器到最新版本</li>
-                      <li>使用 Chrome、Firefox 或 Safari</li>
-                    </ul>
-                  </div>
-                  <button onclick="location.reload()" style="background-color: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%;">重新嘗試</button>
-                </div>
-              </div>
-            \`;
-          });
-          return;
-        }
-      })();
+      // 兼容性檢查 - 必須在頁面載入前執行
+      try {
+        new Function('const a=()=>{};const{b}={};class C{};(async()=>{})();const d={};d?.e')();
+      } catch(e) {
+        document.write('<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#1f2937;color:white;font-family:Arial;text-align:center;padding:20px"><div style="background:#374151;padding:40px;border-radius:16px;max-width:400px"><div style="width:60px;height:60px;background:linear-gradient(135deg,#3b82f6,#10b981);border-radius:12px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold">TM</div><h1 style="margin-bottom:16px">TimeMoney</h1><div style="background:#fef3c7;color:#92400e;padding:16px;border-radius:8px;margin:20px 0"><strong>瀏覽器過舊</strong><br>請更新瀏覽器或使用較新設備</div><button onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;width:100%">重試</button></div></div>');
+      }
     </script>
   </head>
   <body>
