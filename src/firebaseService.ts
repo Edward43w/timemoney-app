@@ -9,17 +9,27 @@ import {
   query, 
   orderBy, 
   Timestamp,
-  setDoc 
+  setDoc,
+  where 
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { Task, Expense, Budget } from './types';
 
-// 集合名稱
-const COLLECTIONS = {
-  TASKS: 'tasks',
-  EXPENSES: 'expenses',
-  BUDGETS: 'budgets'
-} as const;
+// 獲取當前用戶 ID
+const getCurrentUserId = (): string | null => {
+  const user = auth.currentUser;
+  return user ? user.uid : null;
+};
+
+// 集合名稱（加入用戶 ID 隔離）
+const getUserCollection = (baseCollection: string): string => {
+  const userId = getCurrentUserId();
+  if (!userId) {
+    // 如果用戶未登入，使用預設集合（向後兼容）
+    return baseCollection;
+  }
+  return `users/${userId}/${baseCollection}`;
+};
 
 // === 任務相關函數 ===
 
@@ -34,7 +44,7 @@ export const addTask = async (task: Omit<Task, 'id'>) => {
     );
     console.log('Cleaned task data:', cleanTask); // Debug log
     
-    const docRef = await addDoc(collection(db, COLLECTIONS.TASKS), {
+    const docRef = await addDoc(collection(db, getUserCollection('tasks')), {
       ...cleanTask,
       createdAt: Timestamp.now()
     });
@@ -51,7 +61,7 @@ export const addTask = async (task: Omit<Task, 'id'>) => {
 // 更新任務
 export const updateTask = async (taskId: string, updates: Partial<Task>) => {
   try {
-    const taskRef = doc(db, COLLECTIONS.TASKS, taskId);
+    const taskRef = doc(db, getUserCollection('tasks'), taskId);
     await updateDoc(taskRef, {
       ...updates,
       updatedAt: Timestamp.now()
@@ -65,7 +75,7 @@ export const updateTask = async (taskId: string, updates: Partial<Task>) => {
 // 刪除任務
 export const deleteTask = async (taskId: string) => {
   try {
-    const taskRef = doc(db, COLLECTIONS.TASKS, taskId);
+    const taskRef = doc(db, getUserCollection('tasks'), taskId);
     await deleteDoc(taskRef);
   } catch (error) {
     console.error('Error deleting task:', error);
@@ -75,18 +85,25 @@ export const deleteTask = async (taskId: string) => {
 
 // 監聽任務變化
 export const subscribeToTasks = (callback: (tasks: Task[]) => void) => {
-  const q = query(collection(db, COLLECTIONS.TASKS), orderBy('createdAt', 'desc'));
-  
-  return onSnapshot(q, (querySnapshot) => {
-    const tasks: Task[] = [];
-    querySnapshot.forEach((doc) => {
-      tasks.push({
-        id: doc.id,
-        ...doc.data()
-      } as Task);
+  try {
+    const q = query(collection(db, getUserCollection('tasks')), orderBy('createdAt', 'desc'));
+    
+    return onSnapshot(q, (querySnapshot) => {
+      const tasks: Task[] = [];
+      querySnapshot.forEach((doc) => {
+        tasks.push({
+          id: doc.id,
+          ...doc.data()
+        } as Task);
+      });
+      callback(tasks);
     });
-    callback(tasks);
-  });
+  } catch (error) {
+    console.error('Error subscribing to tasks:', error);
+    // 如果用戶未登入，返回空陣列
+    callback([]);
+    return () => {}; // 返回空的 unsubscribe 函數
+  }
 };
 
 // === 費用相關函數 ===
@@ -94,7 +111,7 @@ export const subscribeToTasks = (callback: (tasks: Task[]) => void) => {
 // 新增費用
 export const addExpense = async (expense: Omit<Expense, 'id'>) => {
   try {
-    const docRef = await addDoc(collection(db, COLLECTIONS.EXPENSES), {
+    const docRef = await addDoc(collection(db, getUserCollection('expenses')), {
       ...expense,
       createdAt: Timestamp.now()
     });
@@ -105,20 +122,36 @@ export const addExpense = async (expense: Omit<Expense, 'id'>) => {
   }
 };
 
+// 刪除費用
+export const deleteExpense = async (expenseId: string) => {
+  try {
+    await deleteDoc(doc(db, getUserCollection('expenses'), expenseId));
+  } catch (error) {
+    console.error('Error deleting expense:', error);
+    throw error;
+  }
+};
+
 // 監聽費用變化
 export const subscribeToExpenses = (callback: (expenses: Expense[]) => void) => {
-  const q = query(collection(db, COLLECTIONS.EXPENSES), orderBy('date', 'desc'));
-  
-  return onSnapshot(q, (querySnapshot) => {
-    const expenses: Expense[] = [];
-    querySnapshot.forEach((doc) => {
-      expenses.push({
-        id: doc.id,
-        ...doc.data()
-      } as Expense);
+  try {
+    const q = query(collection(db, getUserCollection('expenses')), orderBy('date', 'desc'));
+    
+    return onSnapshot(q, (querySnapshot) => {
+      const expenses: Expense[] = [];
+      querySnapshot.forEach((doc) => {
+        expenses.push({
+          id: doc.id,
+          ...doc.data()
+        } as Expense);
+      });
+      callback(expenses);
     });
-    callback(expenses);
-  });
+  } catch (error) {
+    console.error('Error subscribing to expenses:', error);
+    callback([]);
+    return () => {};
+  }
 };
 
 // === 預算相關函數 ===
@@ -126,7 +159,7 @@ export const subscribeToExpenses = (callback: (expenses: Expense[]) => void) => 
 // 更新預算
 export const updateBudget = async (budget: Budget) => {
   try {
-    const budgetRef = doc(db, COLLECTIONS.BUDGETS, 'default');
+    const budgetRef = doc(db, getUserCollection('budgets'), 'default');
     await setDoc(budgetRef, {
       ...budget,
       updatedAt: Timestamp.now()
@@ -139,7 +172,7 @@ export const updateBudget = async (budget: Budget) => {
 
 // 監聽預算變化
 export const subscribeToBudget = (callback: (budget: Budget) => void) => {
-  const budgetRef = doc(db, COLLECTIONS.BUDGETS, 'default');
+  const budgetRef = doc(db, getUserCollection('budgets'), 'default');
   
   return onSnapshot(budgetRef, async (doc) => {
     if (doc.exists()) {

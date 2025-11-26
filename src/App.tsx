@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Calendar as CalendarIcon, Wallet, ListTodo, Menu, X } from 'lucide-react';
+import { User } from 'firebase/auth';
+import { LayoutDashboard, Calendar as CalendarIcon, Wallet, ListTodo, Menu, X, LogOut } from 'lucide-react';
 import { Task, Expense, Budget, ViewMode } from './types';
 import { CalendarView } from './components/CalendarView';
 import { TaskList } from './components/TaskList';
 import { FinanceDashboard } from './components/FinanceDashboard';
+import { LoginPage } from './components/LoginPage';
 import { Button } from './components/Button';
 import { 
   subscribeToTasks, 
@@ -13,13 +15,19 @@ import {
   updateTask as firebaseUpdateTask,
   deleteTask as firebaseDeleteTask,
   addExpense as firebaseAddExpense,
+  deleteExpense as firebaseDeleteExpense,
   updateBudget as firebaseUpdateBudget
 } from './firebaseService';
+import { onAuthChange, signOut } from './authService';
 
 // Mock Data Initializers
 const DEFAULT_BUDGET: Budget = { daily: 50, weekly: 300, monthly: 1200 };
 
 const App: React.FC = () => {
+  // --- Authentication State ---
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  
   // --- State ---
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -32,8 +40,26 @@ const App: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [budget, setBudget] = useState<Budget>(DEFAULT_BUDGET);
 
+  // --- Authentication Effect ---
+  useEffect(() => {
+    const unsubscribe = onAuthChange((user) => {
+      setUser(user);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // --- Firebase 監聽器 ---
   useEffect(() => {
+    if (!user) {
+      // 如果未登入，清空資料
+      setTasks([]);
+      setExpenses([]);
+      setBudget(DEFAULT_BUDGET);
+      return;
+    }
+
     // 監聽任務變化
     const unsubscribeTasks = subscribeToTasks(setTasks);
     
@@ -49,7 +75,7 @@ const App: React.FC = () => {
       unsubscribeExpenses();
       unsubscribeBudget();
     };
-  }, []);
+  }, [user]);
 
   // --- Firebase 操作函數 ---
   const handleAddTask = async (task: Task) => {
@@ -88,11 +114,28 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteExpense = async (expenseId: string) => {
+    try {
+      await firebaseDeleteExpense(expenseId);
+    } catch (error) {
+      console.error('Failed to delete expense:', error);
+    }
+  };
+
   const handleUpdateBudget = async (newBudget: Budget) => {
     try {
       await firebaseUpdateBudget(newBudget);
     } catch (error) {
       console.error('Failed to update budget:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      // 用戶狀態會通過 onAuthChange 自動更新
+    } catch (error) {
+      console.error('登出失敗:', error);
     }
   };
 
@@ -103,6 +146,20 @@ const App: React.FC = () => {
         handleUpdateTask({ ...task, date, time });
     }
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-white">載入中...</div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!user) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans flex overflow-hidden">
@@ -150,6 +207,17 @@ const App: React.FC = () => {
               </button>
             </div>
 
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-gray-400 hidden sm:block">{user.email}</span>
+              <Button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-xs"
+              >
+                <LogOut size={14} />
+                <span className="hidden sm:inline">登出</span>
+              </Button>
+            </div>
+
             {activeTab === 'calendar' && (
                 <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-600 shrink-0">
                     {(['day', 'week', 'month'] as ViewMode[]).map(m => (
@@ -184,6 +252,7 @@ const App: React.FC = () => {
                <FinanceDashboard 
                   expenses={expenses}
                   onAddExpense={handleAddExpense}
+                  onDeleteExpense={handleDeleteExpense}
                   budget={budget}
                   onUpdateBudget={handleUpdateBudget}
                   currentDate={currentDate}

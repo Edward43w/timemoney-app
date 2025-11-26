@@ -19,7 +19,7 @@ const app = initializeApp(firebaseConfig);
 // 初始化 Firestore Database
 export const db = getFirestore(app);
 
-// 初始化 Authentication (目前未使用，但為未來準備)
+// 初始化 Authentication
 export const auth = getAuth(app);
 
 export default app;
