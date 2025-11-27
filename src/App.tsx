@@ -247,6 +247,9 @@ const App: React.FC = () => {
                   onTaskSchedule={handleScheduleTask}
                   onUpdateTask={handleUpdateTask}
                   onDeleteTask={handleDeleteTask}
+                  onDeleteExpense={handleDeleteExpense}
+                  onAddExpense={handleAddExpense}
+                  onViewModeChange={setViewMode}
                />
            ) : (
                <FinanceDashboard 

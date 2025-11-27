@@ -9,6 +9,7 @@ export interface Task {
   durationMinutes: number; // Duration in minutes
   date?: string; // ISO Date string (YYYY-MM-DD) if scheduled
   time?: string; // HH:mm if scheduled
+  endTime?: string; // HH:mm for task end time
   deadline?: string; // ISO Date string (YYYY-MM-DD)
   deadlineTime?: string; // HH:mm for deadline
   color: string; // Hex color for the task block

@@ -25,10 +25,13 @@ export const TaskList: React.FC<TaskListProps> = ({
   // Enhanced Form State
   const [newTask, setNewTask] = useState({ 
       title: '', 
-      duration: 30, 
+      durationDays: 0,
+      durationHours: 0,
+      durationMinutes: 30, 
       priority: 'medium' as Priority,
       date: '',
       time: '',
+      endTime: '',
       deadline: '',
       deadlineTime: ''
   });
@@ -62,15 +65,22 @@ export const TaskList: React.FC<TaskListProps> = ({
     e.preventDefault();
     if (!newTask.title.trim()) return;
     
+    // Calculate total duration in minutes
+    const totalDurationMinutes = 
+      (newTask.durationDays * 24 * 60) + 
+      (newTask.durationHours * 60) + 
+      newTask.durationMinutes;
+    
     // 創建不包含 ID 的任務物件（Firebase 會自動生成 ID）
     const taskData = {
       id: '', // 這會被 Firebase 忽略
       title: newTask.title,
-      durationMinutes: newTask.duration,
+      durationMinutes: totalDurationMinutes,
       priority: newTask.priority,
       isCompleted: false,
       date: newTask.date || undefined,
       time: newTask.time || undefined,
+      endTime: newTask.endTime || undefined,
       deadline: newTask.deadline || undefined,
       deadlineTime: newTask.deadlineTime || undefined,
       color: getRandomColor()
@@ -80,7 +90,18 @@ export const TaskList: React.FC<TaskListProps> = ({
     onAddTask(taskData);
     
     // Reset form
-    setNewTask({ title: '', duration: 30, priority: 'medium', date: '', time: '', deadline: '', deadlineTime: '' });
+    setNewTask({ 
+      title: '', 
+      durationDays: 0, 
+      durationHours: 0, 
+      durationMinutes: 30, 
+      priority: 'medium', 
+      date: '', 
+      time: '', 
+      endTime: '',
+      deadline: '', 
+      deadlineTime: '' 
+    });
     setShowScheduleInputs(false);
   };
 
@@ -188,7 +209,14 @@ export const TaskList: React.FC<TaskListProps> = ({
               </div>
               {task.date && (
                 <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-400 bg-blue-900/20 px-1.5 py-0.5 rounded w-fit">
-                  <CalendarIcon size={10} /> {task.date} {task.time}
+                  <CalendarIcon size={10} /> 
+                  {task.date} 
+                  {task.time && (
+                    <span>
+                      {task.time}
+                      {task.endTime && ` - ${task.endTime}`}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -232,72 +260,196 @@ export const TaskList: React.FC<TaskListProps> = ({
           </div>
 
           {showScheduleInputs && (
-             <div className="space-y-2 animate-in slide-in-from-top-2 duration-200 p-2 bg-gray-900/50 rounded border border-gray-600">
-                 <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <label className="text-[10px] text-gray-500">Scheduled Date</label>
-                        <input 
-                            type="date" 
-                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
-                            value={newTask.date}
-                            onChange={e => setNewTask({...newTask, date: e.target.value})}
-                        />
-                    </div>
-                    <div>
-                         <label className="text-[10px] text-gray-500">Time</label>
+             <div className="space-y-4 animate-in slide-in-from-top-2 duration-200 p-4 bg-gray-900/50 rounded-lg border border-gray-600">
+                 {/* Scheduling Section */}
+                 <div>
+                   <h4 className="text-xs font-medium text-gray-300 mb-2 flex items-center gap-1">
+                     <Calendar size={12} /> Schedule
+                   </h4>
+                   <div className="space-y-2">
+                     <div>
+                       <label className="text-xs text-gray-400 block mb-1">Date</label>
+                       <input 
+                           type="date" 
+                           className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"
+                           value={newTask.date}
+                           onChange={e => setNewTask({...newTask, date: e.target.value})}
+                       />
+                     </div>
+                     <div className="grid grid-cols-2 gap-2">
+                       <div>
+                         <label className="text-xs text-gray-400 block mb-1">Start Time</label>
                          <input 
                             type="time"
-                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                            className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"
                             value={newTask.time}
-                            onChange={e => setNewTask({...newTask, time: e.target.value})}
+                            onChange={e => {
+                              setNewTask({...newTask, time: e.target.value});
+                              // Auto-calculate end time based on duration
+                              if (e.target.value && (newTask.durationDays > 0 || newTask.durationHours > 0 || newTask.durationMinutes > 0)) {
+                                const [hours, minutes] = e.target.value.split(':').map(Number);
+                                const startTime = new Date();
+                                startTime.setHours(hours, minutes, 0, 0);
+                                
+                                const totalMinutes = (newTask.durationDays * 24 * 60) + (newTask.durationHours * 60) + newTask.durationMinutes;
+                                const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
+                                
+                                const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
+                                                     endTime.getMinutes().toString().padStart(2, '0');
+                                setNewTask(prev => ({...prev, endTime: endTimeString}));
+                              }
+                            }}
                          />
-                    </div>
+                       </div>
+                       <div>
+                         <label className="text-xs text-gray-400 block mb-1">End Time</label>
+                         <input 
+                            type="time"
+                            className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"
+                            value={newTask.endTime}
+                            onChange={e => setNewTask({...newTask, endTime: e.target.value})}
+                         />
+                       </div>
+                     </div>
+                   </div>
                  </div>
-                 <div className="grid grid-cols-2 gap-2">
+
+                 {/* Deadline Section */}
+                 <div>
+                   <h4 className="text-xs font-medium text-red-400 mb-2 flex items-center gap-1">
+                     <Flag size={12} /> Deadline
+                   </h4>
+                   <div className="grid grid-cols-2 gap-2">
                      <div>
-                        <label className="text-[10px] text-red-400 flex items-center gap-1"><Flag size={10} /> Deadline Date</label>
-                        <input 
-                           type="date"
-                           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
-                           value={newTask.deadline}
-                           onChange={e => setNewTask({...newTask, deadline: e.target.value})}
-                        />
+                       <label className="text-xs text-gray-400 block mb-1">Date</label>
+                       <input 
+                          type="date"
+                          className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none transition-colors"
+                          value={newTask.deadline}
+                          onChange={e => setNewTask({...newTask, deadline: e.target.value})}
+                       />
                      </div>
                      <div>
-                        <label className="text-[10px] text-red-400">Deadline Time</label>
-                        <input 
-                           type="time"
-                           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
-                           value={newTask.deadlineTime}
-                           onChange={e => setNewTask({...newTask, deadlineTime: e.target.value})}
-                        />
+                       <label className="text-xs text-gray-400 block mb-1">Time</label>
+                       <input 
+                          type="time"
+                          className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none transition-colors"
+                          value={newTask.deadlineTime}
+                          onChange={e => setNewTask({...newTask, deadlineTime: e.target.value})}
+                       />
                      </div>
+                   </div>
                  </div>
              </div>
           )}
 
-          <div className="flex gap-2">
-            <select
-               className="bg-gray-900 border border-gray-600 rounded-lg px-2 py-2 text-xs text-white outline-none flex-1 focus:border-blue-600"
-               value={newTask.priority}
-               onChange={e => setNewTask({...newTask, priority: e.target.value as Priority})}
-            >
-              {PRIORITIES.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
-            </select>
-            <div className="relative flex items-center w-24">
-                <input
-                type="number"
-                className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-2 pr-6 py-2 text-xs text-white outline-none focus:border-blue-600"
-                value={newTask.duration}
-                onChange={e => setNewTask({...newTask, duration: parseInt(e.target.value)})}
-                placeholder="30"
-                />
-                <span className="absolute right-2 text-[10px] text-gray-500">min</span>
+          <div className="flex flex-col gap-2">
+            {/* Priority and Duration Row */}
+            <div className="flex gap-2">
+              <select
+                 className="bg-gray-900 border border-gray-600 rounded-lg px-2 py-2 text-xs text-white outline-none flex-1 focus:border-blue-600"
+                 value={newTask.priority}
+                 onChange={e => setNewTask({...newTask, priority: e.target.value as Priority})}
+              >
+                {PRIORITIES.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+              </select>
+              
+              <Button type="submit" size="sm" className="px-3">
+                 <ArrowUpCircle size={18} />
+              </Button>
             </div>
             
-            <Button type="submit" size="sm" className="px-3">
-               <ArrowUpCircle size={18} />
-            </Button>
+            {/* Duration Settings Row */}
+            <div className="flex gap-2 items-center">
+              <span className="text-xs text-gray-400 shrink-0">Duration:</span>
+              <div className="flex gap-2 items-center flex-1">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-12 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-600"
+                    value={newTask.durationDays}
+                    onChange={e => {
+                      const days = parseInt(e.target.value) || 0;
+                      setNewTask({...newTask, durationDays: days});
+                      // Auto-calculate end time if start time is set
+                      if (newTask.time) {
+                        const [hours, minutes] = newTask.time.split(':').map(Number);
+                        const startTime = new Date();
+                        startTime.setHours(hours, minutes, 0, 0);
+                        
+                        const totalMinutes = (days * 24 * 60) + (newTask.durationHours * 60) + newTask.durationMinutes;
+                        const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
+                        
+                        const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
+                                             endTime.getMinutes().toString().padStart(2, '0');
+                        setNewTask(prev => ({...prev, endTime: endTimeString}));
+                      }
+                    }}
+                    placeholder="0"
+                  />
+                  <span className="text-xs text-gray-500">d</span>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    className="w-12 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-600"
+                    value={newTask.durationHours}
+                    onChange={e => {
+                      const hours = parseInt(e.target.value) || 0;
+                      setNewTask({...newTask, durationHours: hours});
+                      // Auto-calculate end time if start time is set
+                      if (newTask.time) {
+                        const [startHours, startMinutes] = newTask.time.split(':').map(Number);
+                        const startTime = new Date();
+                        startTime.setHours(startHours, startMinutes, 0, 0);
+                        
+                        const totalMinutes = (newTask.durationDays * 24 * 60) + (hours * 60) + newTask.durationMinutes;
+                        const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
+                        
+                        const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
+                                             endTime.getMinutes().toString().padStart(2, '0');
+                        setNewTask(prev => ({...prev, endTime: endTimeString}));
+                      }
+                    }}
+                    placeholder="0"
+                  />
+                  <span className="text-xs text-gray-500">h</span>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    className="w-12 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-600"
+                    value={newTask.durationMinutes}
+                    onChange={e => {
+                      const minutes = parseInt(e.target.value) || 0;
+                      setNewTask({...newTask, durationMinutes: minutes});
+                      // Auto-calculate end time if start time is set
+                      if (newTask.time) {
+                        const [startHours, startMinutes] = newTask.time.split(':').map(Number);
+                        const startTime = new Date();
+                        startTime.setHours(startHours, startMinutes, 0, 0);
+                        
+                        const totalMinutes = (newTask.durationDays * 24 * 60) + (newTask.durationHours * 60) + minutes;
+                        const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
+                        
+                        const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
+                                             endTime.getMinutes().toString().padStart(2, '0');
+                        setNewTask(prev => ({...prev, endTime: endTimeString}));
+                      }
+                    }}
+                    placeholder="30"
+                  />
+                  <span className="text-xs text-gray-500">m</span>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
       </div>

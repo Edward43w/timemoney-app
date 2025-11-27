@@ -14,6 +14,9 @@ interface CalendarViewProps {
   onTaskSchedule: (taskId: string, date: string, time: string) => void;
   onUpdateTask: (task: Task) => void;
   onDeleteTask: (id: string) => void;
+  onDeleteExpense: (id: string) => void;
+  onAddExpense: (expense: Expense) => void;
+  onViewModeChange: (mode: 'day' | 'week' | 'month') => void;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -25,10 +28,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   budget,
   onTaskSchedule,
   onUpdateTask,
-  onDeleteTask
+  onDeleteTask,
+  onDeleteExpense,
+  onAddExpense,
+  onViewModeChange
 }) => {
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food' });
 
   // --- Drag and Drop Handlers ---
   const handleDragOver = (e: React.DragEvent) => {
@@ -375,18 +382,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
                      {dayExpenses.length === 0 && <div className="text-xs text-center text-gray-600 py-8 italic">No expenses recorded today</div>}
-                     {dayExpenses.map(e => (
-                         <div key={e.id} className="flex items-center justify-between text-sm group p-2 rounded hover:bg-gray-700 transition-colors">
+                     {dayExpenses.map(expense => (
+                         <div key={expense.id} className="flex items-center justify-between text-sm group p-2 rounded hover:bg-gray-700 transition-colors">
                              <div className="flex items-center gap-3">
                                  <div className="w-8 h-8 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-gray-400">
                                      <DollarSign size={14} />
                                  </div>
                                  <div className="flex flex-col">
-                                    <span className="text-gray-200 font-medium truncate max-w-[100px]">{e.title}</span>
-                                    <span className="text-[10px] text-gray-500">{e.category}</span>
+                                    <span className="text-gray-200 font-medium truncate max-w-[100px]">{expense.title}</span>
+                                    <span className="text-[10px] text-gray-500">{expense.category}</span>
                                  </div>
                              </div>
-                             <span className="font-mono text-white font-bold">-{formatCurrency(e.amount)}</span>
+                             <div className="flex items-center gap-2">
+                                 <span className="font-mono text-white font-bold">-{formatCurrency(expense.amount)}</span>
+                                 <button 
+                                     onClick={(event) => {
+                                         event.stopPropagation();
+                                         onDeleteExpense(expense.id);
+                                     }}
+                                     className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1 rounded transition-all"
+                                     title="Delete expense"
+                                 >
+                                     <Trash2 size={12} />
+                                 </button>
+                             </div>
                          </div>
                      ))}
                  </div>
@@ -589,12 +608,85 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         
                         <div className="space-y-3">
                             {dayExpenses.length === 0 && <div className="text-sm text-gray-600 italic">No expenses recorded</div>}
-                            {dayExpenses.map(e => (
-                                <div key={e.id} className="flex justify-between items-center text-sm bg-gray-900/50 p-2 rounded border border-gray-600/50">
-                                    <span className="text-gray-300">{e.title}</span>
-                                    <span className="text-white font-mono">-{formatCurrency(e.amount)}</span>
+                            {dayExpenses.map(expense => (
+                                <div key={expense.id} className="flex justify-between items-center text-sm bg-gray-900/50 p-2 rounded border border-gray-600/50">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-gray-300">{expense.title}</span>
+                                            <span className="text-xs text-gray-500 bg-gray-700 px-2 py-1 rounded">
+                                                {expense.category}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-white font-mono">-{formatCurrency(expense.amount)}</span>
+                                        <Button
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onDeleteExpense(expense.id);
+                                            }}
+                                            variant="ghost"
+                                            size="sm"
+                                            className="p-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                                        >
+                                            <Trash2 size={14} />
+                                        </Button>
+                                    </div>
                                 </div>
                             ))}
+                        </div>
+                        
+                        {/* Add Expense Form */}
+                        <div className="mt-4 pt-3 border-t border-gray-600">
+                            <div className="space-y-3">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Expense title"
+                                        value={newExpense.title}
+                                        onChange={(e) => setNewExpense({...newExpense, title: e.target.value})}
+                                        className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Amount"
+                                        value={newExpense.amount || ''}
+                                        onChange={(e) => setNewExpense({...newExpense, amount: parseFloat(e.target.value) || 0})}
+                                        className="w-24 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <select
+                                        value={newExpense.category}
+                                        onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}
+                                        className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
+                                    >
+                                        <option value="Food">Food</option>
+                                        <option value="Transport">Transport</option>
+                                        <option value="Entertainment">Entertainment</option>
+                                        <option value="Shopping">Shopping</option>
+                                        <option value="Bills">Bills</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                    <Button
+                                        onClick={() => {
+                                            if (newExpense.title && newExpense.amount > 0) {
+                                                onAddExpense({
+                                                    ...newExpense,
+                                                    date: formatDateISO(selectedDayDetails!),
+                                                    id: Date.now().toString()
+                                                });
+                                                setNewExpense({ title: '', amount: 0, category: 'Food' });
+                                            }
+                                        }}
+                                        size="sm"
+                                        className="px-4"
+                                        disabled={!newExpense.title || newExpense.amount <= 0}
+                                    >
+                                        Add
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
                      </div>
                  </div>
@@ -606,6 +698,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         variant="secondary"
                         onClick={() => {
                             onDateChange(selectedDayDetails);
+                            onViewModeChange('day');
                             setSelectedDayDetails(null);
                         }}
                     >
