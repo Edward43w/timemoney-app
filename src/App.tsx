@@ -24,7 +24,7 @@ import { onAuthChange, signOut } from './authService';
 const DEFAULT_BUDGET: Budget = { daily: 50, weekly: 300, monthly: 1200 };
 
 // App Version for Cache Busting
-const APP_VERSION = "2025.11.28-v2.1";
+const APP_VERSION = "2025.11.29-v3.0";
 
 const App: React.FC = () => {
   // --- Authentication State ---
