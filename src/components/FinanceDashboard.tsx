@@ -183,58 +183,6 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
         </div>
       </div>
 
-      <Button onClick={() => setShowAddModal(true)} className="w-full md:w-auto self-end flex items-center justify-center gap-2">
-        <Plus size={18} /> Log Expense
-      </Button>
-
-      {/* Expense History */}
-      <div className="bg-gray-800 border border-gray-600 rounded-2xl p-6">
-        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-          <History size={18} className="text-blue-500" />
-          Recent Expenses
-        </h3>
-        {monthlyExpenses.length > 0 ? (
-          <div className="space-y-3 max-h-60 overflow-y-auto">
-            {monthlyExpenses
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-              .map((expense) => (
-                <div key={expense.id} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">{expense.title}</span>
-                      <span className="text-xs text-gray-400 bg-gray-600 px-2 py-1 rounded">
-                        {expense.category}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-400 mt-1">
-                      {new Date(expense.date).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-red-400">
-                      -{formatCurrency(expense.amount)}
-                    </span>
-                    <Button
-                      onClick={() => onDeleteExpense(expense.id)}
-                      variant="ghost"
-                      size="sm"
-                      className="p-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
-                    >
-                      <Trash2 size={16} />
-                    </Button>
-                  </div>
-                </div>
-              ))
-            }
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            <DollarSign size={24} className="mx-auto mb-2 opacity-50" />
-            <p>No expenses recorded yet</p>
-          </div>
-        )}
-      </div>
-
       {/* Add Expense Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

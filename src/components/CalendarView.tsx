@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Task, Expense, Budget, Priority, PRIORITIES } from '../types';
 import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange, TASK_COLORS } from '../utils';
-import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, GripVertical, Flag, Trash2, Edit2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, GripVertical, Flag, Trash2, Edit2, Plus } from 'lucide-react';
 import { Button } from './Button';
 
 interface CalendarViewProps {
@@ -36,6 +36,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food' });
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
 
   // --- Drag and Drop Handlers ---
   const handleDragOver = (e: React.DragEvent) => {
@@ -710,16 +711,113 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
      )
   };
 
+  // --- ADD EXPENSE MODAL ---
+  const renderAddExpenseModal = () => {
+    if (!showAddExpenseModal) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-gray-800 border border-gray-600 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold text-white">Log Expense</h3>
+            <button onClick={() => setShowAddExpenseModal(false)} className="text-gray-400 hover:text-white">
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
+              <input
+                type="text"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
+                placeholder="Enter expense description"
+                value={newExpense.title}
+                onChange={(e) => setNewExpense({ ...newExpense, title: e.target.value })}
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
+                  placeholder="0.00"
+                  value={newExpense.amount || ''}
+                  onChange={(e) => setNewExpense({ ...newExpense, amount: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                <select
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                  value={newExpense.category}
+                  onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
+                >
+                  <option value="Food">Food</option>
+                  <option value="Transport">Transport</option>
+                  <option value="Entertainment">Entertainment</option>
+                  <option value="Shopping">Shopping</option>
+                  <option value="Bills">Bills</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <Button 
+                variant="ghost" 
+                onClick={() => setShowAddExpenseModal(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (newExpense.title && newExpense.amount > 0) {
+                    onAddExpense({
+                      ...newExpense,
+                      date: formatDateISO(currentDate),
+                      id: Date.now().toString()
+                    });
+                    setNewExpense({ title: '', amount: 0, category: 'Food' });
+                    setShowAddExpenseModal(false);
+                  }
+                }}
+                disabled={!newExpense.title || newExpense.amount <= 0}
+                className="flex-1"
+              >
+                Add Expense
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg md:rounded-2xl border border-gray-600 overflow-hidden shadow-2xl relative">
       <div className="flex items-center justify-between mb-0 px-3 py-3 md:px-4 md:pt-4 md:pb-2 border-b border-gray-600 bg-gray-800/50 shrink-0">
         <h2 className="text-lg md:text-2xl font-bold text-white tracking-tight">
             {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
         </h2>
-        <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-600">
-           <Button variant="ghost" onClick={handlePrev} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronLeft size={16}/></Button>
-           <Button variant="ghost" onClick={() => onDateChange(new Date())} size="sm" className="h-7 md:h-8 text-xs px-2">Today</Button>
-           <Button variant="ghost" onClick={handleNext} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronRight size={16}/></Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={() => setShowAddExpenseModal(true)} 
+            className="flex items-center gap-2 px-3 py-2 text-sm"
+            size="sm"
+          >
+            <Plus size={16} /> Log Expense
+          </Button>
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-600">
+             <Button variant="ghost" onClick={handlePrev} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronLeft size={16}/></Button>
+             <Button variant="ghost" onClick={() => onDateChange(new Date())} size="sm" className="h-7 md:h-8 text-xs px-2">Today</Button>
+             <Button variant="ghost" onClick={handleNext} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronRight size={16}/></Button>
+          </div>
         </div>
       </div>
 
@@ -732,6 +830,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Render Modals */}
       {renderDayDetailModal()}
       {renderTaskEditModal()}
+      {renderAddExpenseModal()}
     </div>
   );
 };
