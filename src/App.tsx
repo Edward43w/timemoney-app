@@ -23,6 +23,9 @@ import { onAuthChange, signOut } from './authService';
 // Mock Data Initializers
 const DEFAULT_BUDGET: Budget = { daily: 50, weekly: 300, monthly: 1200 };
 
+// App Version for Cache Busting
+const APP_VERSION = "2025.11.28-v2.1";
+
 const App: React.FC = () => {
   // --- Authentication State ---
   const [user, setUser] = useState<User | null>(null);
@@ -286,6 +289,11 @@ const App: React.FC = () => {
               </div>
           </div>
       )}
+      
+      {/* Version Info for Cache Debugging */}
+      <div className="fixed bottom-2 right-2 text-xs text-gray-600 bg-gray-800/50 px-2 py-1 rounded opacity-30 hover:opacity-100 transition-opacity">
+        v{APP_VERSION}
+      </div>
     </div>
   );
 };
