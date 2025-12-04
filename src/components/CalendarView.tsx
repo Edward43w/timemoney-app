@@ -90,6 +90,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return { dayTasks, dayExpenses, totalSpent, isOverBudget, deadlines };
   };
 
+  // 計算周/月開銷統計
+  const getPeriodStats = () => {
+    if (viewMode === 'week') {
+      const weekRange = getWeekRange(currentDate);
+      const weekExpenses = expenses.filter(e => {
+        const expenseDate = new Date(e.date);
+        return expenseDate >= weekRange.start && expenseDate <= weekRange.end;
+      });
+      const totalSpent = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
+      return { totalSpent, budget: budget.weekly, isOverBudget: totalSpent > budget.weekly, period: 'week' };
+    } else if (viewMode === 'month') {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const monthExpenses = expenses.filter(e => {
+        const expenseDate = new Date(e.date);
+        return expenseDate.getFullYear() === year && expenseDate.getMonth() === month;
+      });
+      const totalSpent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+      return { totalSpent, budget: budget.monthly, isOverBudget: totalSpent > budget.monthly, period: 'month' };
+    }
+    return null;
+  };
+
   // --- MONTH VIEW ---
   const renderMonth = () => {
     const year = currentDate.getFullYear();
@@ -288,7 +311,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             <span>Unscheduled / All Day</span>
                         </div>
                         <div 
-                            className="flex flex-wrap gap-2 min-h-[32px]"
+                            className="flex flex-wrap gap-2 min-h-8"
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, currentDate)}
                         >
@@ -420,7 +443,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     if (!editingTask) return null;
 
     return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
              <div className="bg-gray-800 border border-gray-600 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-2">
                     <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -462,7 +485,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                             <label className="text-xs text-red-400 block mb-1 font-semibold flex items-center gap-1"><Flag size={10} /> Deadline</label>
+                             <label className="text-xs text-red-400 mb-1 font-semibold flex items-center gap-1"><Flag size={10} /> Deadline</label>
                              <input 
                                  type="date"
                                  className="w-full bg-gray-900 border border-red-900/30 rounded px-3 py-2 text-white text-xs"
@@ -530,7 +553,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <Trash2 size={16} /> Delete
                     </Button>
                     <Button 
-                        className="flex-[2]"
+                        className="flex-auto"
                         onClick={() => {
                             onUpdateTask(editingTask);
                             setEditingTask(null);
@@ -550,7 +573,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
      const { dayTasks, dayExpenses, totalSpent, isOverBudget } = getDayStats(selectedDayDetails);
      
      return (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
              <div 
                 className="bg-gray-800 border border-gray-600 w-full max-w-sm md:max-w-md rounded-3xl overflow-hidden shadow-2xl scale-100 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
                 onClick={(e) => e.stopPropagation()}
@@ -802,9 +825,26 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg md:rounded-2xl border border-gray-600 overflow-hidden shadow-2xl relative">
       <div className="flex items-center justify-between mb-0 px-3 py-3 md:px-4 md:pt-4 md:pb-2 border-b border-gray-600 bg-gray-800/50 shrink-0">
-        <h2 className="text-lg md:text-2xl font-bold text-white tracking-tight">
-            {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-        </h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg md:text-2xl font-bold text-white tracking-tight">
+              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </h2>
+          {/* 開銷統計顯示 */}
+          {(viewMode === 'week' || viewMode === 'month') && (() => {
+            const periodStats = getPeriodStats();
+            if (!periodStats) return null;
+            return (
+              <div className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                periodStats.isOverBudget 
+                  ? 'bg-red-900/20 border border-red-500/30 text-red-400' 
+                  : 'bg-green-900/20 border border-green-500/30 text-green-400'
+              }`}>
+                <span className="text-xs opacity-75">{periodStats.period === 'week' ? '週' : '月'}開銷: </span>
+                {formatCurrency(periodStats.totalSpent)} / {formatCurrency(periodStats.budget)}
+              </div>
+            );
+          })()}
+        </div>
         <div className="flex items-center gap-2">
           <Button 
             onClick={() => setShowAddExpenseModal(true)} 

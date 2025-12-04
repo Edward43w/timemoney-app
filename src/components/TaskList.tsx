@@ -160,8 +160,8 @@ export const TaskList: React.FC<TaskListProps> = ({
         </div>
       </div>
 
-      {/* Task List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Task List - 固定高度滑動容器 */}
+      <div className="max-h-[calc(100vh-300px)] overflow-y-auto p-4 space-y-3">
         {sortedTasks.map(task => (
           <div 
             key={task.id}
