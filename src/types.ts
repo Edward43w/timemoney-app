@@ -29,7 +29,7 @@ export interface Budget {
   monthly: number;
 }
 
-export const EXPENSE_CATEGORIES = [
+export const DEFAULT_EXPENSE_CATEGORIES = [
   'Food', 'Transport', 'Shopping', 'Entertainment', 'Bills', 'Education', 'Health', 'Other'
 ];
 

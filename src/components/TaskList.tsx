@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Task, Priority, PRIORITIES } from '../types';
-import { generateId, formatDateISO, getRandomColor } from '../utils';
+import { getRandomColor } from '../utils';
 import { Button } from './Button';
-import { CheckSquare, Square, Clock, Calendar as CalendarIcon, Filter, Trash2, ArrowUpCircle, ArrowUpDown, GripVertical, Calendar, Flag } from 'lucide-react';
+import {
+  CheckSquare,
+  Square,
+  Clock,
+  Calendar as CalendarIcon,
+  Trash2,
+  ArrowUpCircle,
+  ArrowUpDown,
+  GripVertical,
+  Calendar,
+  Flag,
+  ChevronDown,
+  Plus,
+} from 'lucide-react';
 
 interface TaskListProps {
   tasks: Task[];
@@ -12,70 +25,227 @@ interface TaskListProps {
   className?: string;
 }
 
+type TaskFilter = 'all' | 'scheduled' | 'unscheduled' | 'done';
+type TaskSort = 'priority' | 'duration' | 'default';
+
+interface NewTaskState {
+  title: string;
+  durationDays: number;
+  durationHours: number;
+  durationMinutes: number;
+  priority: Priority;
+  date: string;
+  time: string;
+  endTime: string;
+  deadline: string;
+  deadlineTime: string;
+}
+
+const DEFAULT_TASK: NewTaskState = {
+  title: '',
+  durationDays: 0,
+  durationHours: 0,
+  durationMinutes: 30,
+  priority: 'medium',
+  date: '',
+  time: '',
+  endTime: '',
+  deadline: '',
+  deadlineTime: '',
+};
+
+const FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [
+  { value: 'all', label: 'Active' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'unscheduled', label: 'Unscheduled' },
+  { value: 'done', label: 'Done' },
+];
+
+const SORT_OPTIONS: { value: TaskSort; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'duration', label: 'Duration' },
+];
+
+const QUICK_DURATIONS = [
+  { label: '15m', minutes: 15 },
+  { label: '30m', minutes: 30 },
+  { label: '45m', minutes: 45 },
+  { label: '1h', minutes: 60 },
+  { label: '1.5h', minutes: 90 },
+  { label: '2h', minutes: 120 },
+];
+
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
+  const totalMinutes = index * 15;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+});
+
+const priorityScore: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
+
+const durationToParts = (totalMinutes: number) => {
+  const safeMinutes = Math.max(0, totalMinutes);
+  const durationDays = Math.floor(safeMinutes / 1440);
+  const remainingAfterDays = safeMinutes % 1440;
+  const durationHours = Math.floor(remainingAfterDays / 60);
+  const durationMinutes = remainingAfterDays % 60;
+  return { durationDays, durationHours, durationMinutes };
+};
+
+const getDurationMinutes = (task: NewTaskState) => {
+  return task.durationDays * 1440 + task.durationHours * 60 + task.durationMinutes;
+};
+
+const timeToMinutes = (time: string) => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (minutes: number) => {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+};
+
+const getEndTimeFromDuration = (startTime: string, durationMinutes: number) => {
+  if (!startTime || durationMinutes <= 0) return '';
+  return minutesToTime(timeToMinutes(startTime) + durationMinutes);
+};
+
+const getDurationFromRange = (startTime: string, endTime: string) => {
+  if (!startTime || !endTime) return null;
+  const start = timeToMinutes(startTime);
+  let end = timeToMinutes(endTime);
+  if (end <= start) end += 1440;
+  return end - start;
+};
+
+const formatDuration = (minutes: number) => {
+  const { durationDays, durationHours, durationMinutes } = durationToParts(minutes);
+  const parts = [];
+  if (durationDays) parts.push(`${durationDays}d`);
+  if (durationHours) parts.push(`${durationHours}h`);
+  if (durationMinutes || parts.length === 0) parts.push(`${durationMinutes}m`);
+  return parts.join(' ');
+};
+
+const TimeSelect = ({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) => (
+  <div className="relative">
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full appearance-none rounded-md border border-gray-600 bg-gray-900 px-2.5 py-2 pr-8 text-xs text-white outline-none transition-colors focus:border-blue-500"
+    >
+      <option value="">{placeholder}</option>
+      {TIME_OPTIONS.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+    </select>
+    <ChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />
+  </div>
+);
+
 export const TaskList: React.FC<TaskListProps> = ({
   tasks,
   onAddTask,
   onUpdateTask,
   onDeleteTask,
-  className
+  className,
 }) => {
-  const [filter, setFilter] = useState<'all' | 'scheduled' | 'unscheduled'>('all');
-  const [sortBy, setSortBy] = useState<'priority' | 'duration' | 'default'>('default');
-  
-  // Enhanced Form State
-  const [newTask, setNewTask] = useState({ 
-      title: '', 
-      durationDays: 0,
-      durationHours: 0,
-      durationMinutes: 30, 
-      priority: 'medium' as Priority,
-      date: '',
-      time: '',
-      endTime: '',
-      deadline: '',
-      deadlineTime: ''
-  });
+  const [filter, setFilter] = useState<TaskFilter>('all');
+  const [sortBy, setSortBy] = useState<TaskSort>('default');
+  const [newTask, setNewTask] = useState<NewTaskState>(DEFAULT_TASK);
   const [showScheduleInputs, setShowScheduleInputs] = useState(false);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
 
-  // Sorting Logic
-  const sortedTasks = [...tasks]
-    .filter(t => {
-      if (filter === 'scheduled') return !!t.date;
-      if (filter === 'unscheduled') return !t.date;
-      return true;
-    })
-    .sort((a, b) => {
-       // Always move completed to bottom
-       if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+  const counts = useMemo(() => {
+    return {
+      all: tasks.filter((task) => !task.isCompleted).length,
+      scheduled: tasks.filter((task) => !task.isCompleted && !!task.date).length,
+      unscheduled: tasks.filter((task) => !task.isCompleted && !task.date).length,
+      done: tasks.filter((task) => task.isCompleted).length,
+    };
+  }, [tasks]);
 
-       if (sortBy === 'priority') {
-          const prioScore = { high: 3, medium: 2, low: 1 };
-          return prioScore[b.priority] - prioScore[a.priority];
-       }
-       if (sortBy === 'duration') {
+  const sortedTasks = useMemo(() => {
+    return [...tasks]
+      .filter((task) => {
+        if (filter === 'done') return task.isCompleted;
+        if (task.isCompleted) return false;
+        if (filter === 'scheduled') return !!task.date;
+        if (filter === 'unscheduled') return !task.date;
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'priority' || sortBy === 'default') {
+          return priorityScore[b.priority] - priorityScore[a.priority];
+        }
+        if (sortBy === 'duration') {
           return b.durationMinutes - a.durationMinutes;
-       }
-       
-       // Default: High priority first, then creation order (mocked by index stability)
-       const prioScore = { high: 3, medium: 2, low: 1 };
-       return prioScore[b.priority] - prioScore[a.priority];
-    });
+        }
+        return 0;
+      });
+  }, [filter, sortBy, tasks]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const updateDuration = (totalMinutes: number) => {
+    const nextDuration = durationToParts(totalMinutes);
+    setNewTask((current) => ({
+      ...current,
+      ...nextDuration,
+      endTime: current.time ? getEndTimeFromDuration(current.time, totalMinutes) : current.endTime,
+    }));
+  };
+
+  const updateDurationPart = (part: 'durationDays' | 'durationHours' | 'durationMinutes', value: number) => {
+    const nextTask = { ...newTask, [part]: Math.max(0, value) };
+    const totalMinutes = getDurationMinutes(nextTask);
+    setNewTask({
+      ...newTask,
+      ...durationToParts(totalMinutes),
+      endTime: nextTask.time ? getEndTimeFromDuration(nextTask.time, totalMinutes) : nextTask.endTime,
+    });
+  };
+
+  const updateStartTime = (time: string) => {
+    const durationMinutes = getDurationMinutes(newTask);
+    setNewTask({
+      ...newTask,
+      time,
+      endTime: time ? getEndTimeFromDuration(time, durationMinutes) : '',
+    });
+  };
+
+  const updateEndTime = (endTime: string) => {
+    const totalMinutes = getDurationFromRange(newTask.time, endTime);
+    setNewTask({
+      ...newTask,
+      ...(totalMinutes === null ? {} : durationToParts(totalMinutes)),
+      endTime,
+    });
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (!newTask.title.trim()) return;
-    
-    // Calculate total duration in minutes
-    const totalDurationMinutes = 
-      (newTask.durationDays * 24 * 60) + 
-      (newTask.durationHours * 60) + 
-      newTask.durationMinutes;
-    
-    // 創建不包含 ID 的任務物件（Firebase 會自動生成 ID）
-    const taskData = {
-      id: '', // 這會被 Firebase 忽略
-      title: newTask.title,
-      durationMinutes: totalDurationMinutes,
+
+    const durationMinutes = Math.max(1, getDurationMinutes(newTask));
+    onAddTask({
+      id: '',
+      title: newTask.title.trim(),
+      durationMinutes,
       priority: newTask.priority,
       isCompleted: false,
       date: newTask.date || undefined,
@@ -83,376 +253,320 @@ export const TaskList: React.FC<TaskListProps> = ({
       endTime: newTask.endTime || undefined,
       deadline: newTask.deadline || undefined,
       deadlineTime: newTask.deadlineTime || undefined,
-      color: getRandomColor()
-    };
-    
-    console.log('Creating task:', taskData); // Debug log
-    onAddTask(taskData);
-    
-    // Reset form
-    setNewTask({ 
-      title: '', 
-      durationDays: 0, 
-      durationHours: 0, 
-      durationMinutes: 30, 
-      priority: 'medium', 
-      date: '', 
-      time: '', 
-      endTime: '',
-      deadline: '', 
-      deadlineTime: '' 
+      color: getRandomColor(),
     });
+
+    setNewTask(DEFAULT_TASK);
     setShowScheduleInputs(false);
+    setShowAddTaskModal(false);
   };
 
   const toggleComplete = (task: Task) => {
     onUpdateTask({ ...task, isCompleted: !task.isCompleted });
   };
 
-  const handleDragStart = (e: React.DragEvent, task: Task) => {
-    e.dataTransfer.setData('taskId', task.id);
-    e.dataTransfer.setData('taskDuration', task.durationMinutes.toString());
-    e.dataTransfer.effectAllowed = 'move';
-    const el = e.target as HTMLElement;
+  const handleDragStart = (event: React.DragEvent, task: Task) => {
+    event.dataTransfer.setData('taskId', task.id);
+    event.dataTransfer.setData('taskDuration', task.durationMinutes.toString());
+    event.dataTransfer.effectAllowed = 'move';
+    const el = event.target as HTMLElement;
     el.style.opacity = '0.5';
   };
 
-  const handleDragEnd = (e: React.DragEvent) => {
-    const el = e.target as HTMLElement;
+  const handleDragEnd = (event: React.DragEvent) => {
+    const el = event.target as HTMLElement;
     el.style.opacity = '1';
   };
 
+  const currentDuration = getDurationMinutes(newTask);
+
   return (
-    <div className={`flex flex-col h-full bg-gray-800 border-l border-gray-600 ${className}`}>
-      {/* Header */}
-      <div className="p-4 border-b border-gray-600 space-y-4">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-           <CheckSquare className="text-blue-500" />
-           To-Do List
+    <div className={`relative flex h-full min-h-0 flex-col border-l border-gray-700 bg-gray-800 ${className}`}>
+      <div className="shrink-0 border-b border-gray-700 p-4">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-white">
+          <CheckSquare className="text-blue-500" />
+          To-Do List
         </h2>
-        
-        {/* Filters */}
-        <div className="flex gap-2 text-xs overflow-x-auto pb-1">
-          {['all', 'scheduled', 'unscheduled'].map(f => (
-             <button
-               key={f}
-               onClick={() => setFilter(f as any)}
-               className={`px-2 py-1 rounded capitalize whitespace-nowrap ${filter === f ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-             >
-               {f}
-             </button>
+
+        <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+          {FILTER_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setFilter(option.value)}
+              className={`flex min-w-0 items-center justify-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${
+                filter === option.value ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <span className="truncate">{option.label}</span>
+              <span className="rounded bg-black/20 px-1 text-[10px]">{counts[option.value]}</span>
+            </button>
           ))}
         </div>
 
-        {/* Sort Controls */}
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <ArrowUpDown size={12} />
-          <span>Sort by:</span>
-          <select 
-            value={sortBy} 
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white outline-none"
+          <span>Sort</span>
+          <select
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as TaskSort)}
+            className="min-w-0 flex-1 rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-white outline-none focus:border-blue-500"
           >
-            <option value="default">Default</option>
-            <option value="priority">Priority (High first)</option>
-            <option value="duration">Duration (Long first)</option>
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
-      {/* Task List - 固定高度滑動容器 */}
-      <div className="max-h-[calc(100vh-300px)] overflow-y-auto p-4 space-y-3">
-        {sortedTasks.map(task => (
-          <div 
-            key={task.id}
-            draggable={!task.isCompleted}
-            onDragStart={(e) => handleDragStart(e, task)}
-            onDragEnd={handleDragEnd}
-            className={`group p-3 rounded-lg border flex gap-3 relative transition-all cursor-grab active:cursor-grabbing
-              ${task.isCompleted 
-                ? 'border-gray-600 bg-gray-900/50 opacity-60' 
-                : 'border-gray-600 bg-gray-900 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5'
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-20">
+        <div className="space-y-3">
+          {sortedTasks.map((task) => (
+            <div
+              key={task.id}
+              draggable={!task.isCompleted}
+              onDragStart={(event) => handleDragStart(event, task)}
+              onDragEnd={handleDragEnd}
+              className={`group relative flex gap-3 rounded-lg border p-3 transition-all ${
+                task.isCompleted
+                  ? 'border-gray-700 bg-gray-900/60 text-gray-500'
+                  : 'cursor-grab border-gray-700 bg-gray-900 hover:border-blue-500/50 active:cursor-grabbing'
               }`}
-          >
-            <div 
-                className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg" 
+            >
+              <div
+                className="absolute bottom-0 left-0 top-0 w-1 rounded-l-lg"
                 style={{ backgroundColor: task.color || '#3b82f6' }}
-            ></div>
+              />
 
-            {/* Drag Handle */}
-            <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 opacity-0 group-hover:opacity-100 cursor-grab z-10">
-              <GripVertical size={14} />
-            </div>
+              {!task.isCompleted && (
+                <div className="absolute left-2 top-1/2 z-10 -translate-y-1/2 cursor-grab text-gray-600 opacity-0 group-hover:opacity-100">
+                  <GripVertical size={14} />
+                </div>
+              )}
 
-            <button onClick={() => toggleComplete(task)} className="mt-1 ml-2 text-gray-500 hover:text-blue-500 shrink-0 pl-1">
-              {task.isCompleted ? <CheckSquare size={18} /> : <Square size={18} />}
-            </button>
-            
-            <div className="flex-1 min-w-0">
-              <div className={`font-medium truncate ${task.isCompleted ? 'line-through text-gray-500' : 'text-gray-200'}`}>
-                {task.title}
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                <span className="capitalize font-bold tracking-wider text-[10px] text-gray-400">
-                  {task.priority}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock size={10} /> {task.durationMinutes}m
-                </span>
-                {task.deadline && (
-                    <span className="flex items-center gap-1 text-red-400 font-medium" title={task.deadlineTime ? `Due at ${task.deadlineTime}` : 'Deadline'}>
-                        <Flag size={10} /> 
-                        {task.deadline}
-                        {task.deadlineTime && <span className="text-[9px] bg-red-900/30 px-1 rounded">{task.deadlineTime}</span>}
-                    </span>
-                )}
-              </div>
-              {task.date && (
-                <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-400 bg-blue-900/20 px-1.5 py-0.5 rounded w-fit">
-                  <CalendarIcon size={10} /> 
-                  {task.date} 
-                  {task.time && (
-                    <span>
-                      {task.time}
-                      {task.endTime && ` - ${task.endTime}`}
+              <button
+                onClick={() => toggleComplete(task)}
+                className="ml-2 mt-1 shrink-0 pl-1 text-gray-500 hover:text-blue-500"
+                aria-label={task.isCompleted ? 'Mark as active' : 'Mark as done'}
+              >
+                {task.isCompleted ? <CheckSquare size={18} /> : <Square size={18} />}
+              </button>
+
+              <div className="min-w-0 flex-1">
+                <div className={`truncate font-medium ${task.isCompleted ? 'line-through' : 'text-gray-200'}`}>
+                  {task.title}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{task.priority}</span>
+                  <span className="flex items-center gap-1">
+                    <Clock size={10} /> {formatDuration(task.durationMinutes)}
+                  </span>
+                  {task.deadline && (
+                    <span className="flex items-center gap-1 font-medium text-red-400">
+                      <Flag size={10} />
+                      {task.deadline}
+                      {task.deadlineTime && <span className="rounded bg-red-900/30 px-1 text-[9px]">{task.deadlineTime}</span>}
                     </span>
                   )}
                 </div>
-              )}
-            </div>
-            
-            <button 
-              onClick={() => onDeleteTask(task.id)}
-              className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-500 transition-opacity self-start"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
+                {task.date && (
+                  <div className="mt-1 flex w-fit items-center gap-1 rounded bg-blue-900/20 px-1.5 py-0.5 text-[10px] text-blue-400">
+                    <CalendarIcon size={10} />
+                    {task.date}
+                    {task.time && (
+                      <span>
+                        {task.time}
+                        {task.endTime && ` - ${task.endTime}`}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
 
-        {sortedTasks.length === 0 && (
-            <div className="text-center text-gray-600 text-sm mt-10">
-                No tasks found.
+              <button
+                onClick={() => onDeleteTask(task.id)}
+                className="self-start text-gray-600 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                aria-label="Delete task"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
-        )}
+          ))}
+
+          {sortedTasks.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-700 p-6 text-center text-sm text-gray-500">
+              {filter === 'done' ? 'No completed tasks.' : 'No active tasks here.'}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Add Task Form */}
-      <div className="p-4 border-t border-gray-600 bg-gray-800">
-        <form onSubmit={handleSubmit} className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setShowAddTaskModal(true)}
+        className="absolute bottom-4 right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl shadow-blue-950/50 transition-colors hover:bg-blue-500"
+        aria-label="Add task"
+      >
+        <Plus size={24} />
+      </button>
+
+      {showAddTaskModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4">
+          <div className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-gray-700 bg-gray-800 p-4 shadow-2xl md:rounded-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">New Task</h3>
+                <p className="text-xs text-gray-500">Set duration first, then schedule when needed.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddTaskModal(false)}
+                className="rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-700 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+      <form onSubmit={handleSubmit}>
+        <div className="mb-3 flex items-center gap-2">
           <input
             type="text"
-            placeholder="New Task..."
-            className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-600 outline-none transition-colors"
+            placeholder="New task..."
+            className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-blue-500"
             value={newTask.title}
-            onChange={e => setNewTask({...newTask, title: e.target.value})}
+            onChange={(event) => setNewTask({ ...newTask, title: event.target.value })}
           />
-          
-          <div className="flex items-center justify-between text-xs text-gray-400">
-              <button 
-                type="button" 
-                onClick={() => setShowScheduleInputs(!showScheduleInputs)}
-                className="flex items-center gap-1 hover:text-blue-400"
-              >
-                  <Calendar size={14} /> 
-                  {showScheduleInputs ? 'Hide Details' : 'Add Details (Date/Deadline)'}
-              </button>
+          <Button type="submit" size="sm" className="h-9 w-9 p-0" aria-label="Add task">
+            <ArrowUpCircle size={18} />
+          </Button>
+        </div>
+
+        <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
+          <select
+            className="rounded-lg border border-gray-700 bg-gray-900 px-2 py-2 text-xs font-semibold text-white outline-none focus:border-blue-500"
+            value={newTask.priority}
+            onChange={(event) => setNewTask({ ...newTask, priority: event.target.value as Priority })}
+          >
+            {PRIORITIES.map((priority) => (
+              <option key={priority} value={priority}>
+                {priority.toUpperCase()}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowScheduleInputs(!showScheduleInputs)}
+            className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-xs text-gray-300 hover:text-white"
+          >
+            {showScheduleInputs ? 'Hide' : 'Details'}
+            <Plus size={14} />
+          </button>
+        </div>
+
+        <div className="mb-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3">
+          <div className="mb-2 flex items-center justify-between text-xs">
+            <span className="font-medium text-gray-300">Duration</span>
+            <span className="text-gray-500">{formatDuration(currentDuration)}</span>
           </div>
-
-          {showScheduleInputs && (
-             <div className="space-y-4 animate-in slide-in-from-top-2 duration-200 p-4 bg-gray-900/50 rounded-lg border border-gray-600">
-                 {/* Scheduling Section */}
-                 <div>
-                   <h4 className="text-xs font-medium text-gray-300 mb-2 flex items-center gap-1">
-                     <Calendar size={12} /> Schedule
-                   </h4>
-                   <div className="space-y-2">
-                     <div>
-                       <label className="text-xs text-gray-400 block mb-1">Date</label>
-                       <input 
-                           type="date" 
-                           className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"
-                           value={newTask.date}
-                           onChange={e => setNewTask({...newTask, date: e.target.value})}
-                       />
-                     </div>
-                     <div className="grid grid-cols-2 gap-2">
-                       <div>
-                         <label className="text-xs text-gray-400 block mb-1">Start Time</label>
-                         <input 
-                            type="time"
-                            className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"
-                            value={newTask.time}
-                            onChange={e => {
-                              setNewTask({...newTask, time: e.target.value});
-                              // Auto-calculate end time based on duration
-                              if (e.target.value && (newTask.durationDays > 0 || newTask.durationHours > 0 || newTask.durationMinutes > 0)) {
-                                const [hours, minutes] = e.target.value.split(':').map(Number);
-                                const startTime = new Date();
-                                startTime.setHours(hours, minutes, 0, 0);
-                                
-                                const totalMinutes = (newTask.durationDays * 24 * 60) + (newTask.durationHours * 60) + newTask.durationMinutes;
-                                const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
-                                
-                                const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
-                                                     endTime.getMinutes().toString().padStart(2, '0');
-                                setNewTask(prev => ({...prev, endTime: endTimeString}));
-                              }
-                            }}
-                         />
-                       </div>
-                       <div>
-                         <label className="text-xs text-gray-400 block mb-1">End Time</label>
-                         <input 
-                            type="time"
-                            className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"
-                            value={newTask.endTime}
-                            onChange={e => setNewTask({...newTask, endTime: e.target.value})}
-                         />
-                       </div>
-                     </div>
-                   </div>
-                 </div>
-
-                 {/* Deadline Section */}
-                 <div>
-                   <h4 className="text-xs font-medium text-red-400 mb-2 flex items-center gap-1">
-                     <Flag size={12} /> Deadline
-                   </h4>
-                   <div className="grid grid-cols-2 gap-2">
-                     <div>
-                       <label className="text-xs text-gray-400 block mb-1">Date</label>
-                       <input 
-                          type="date"
-                          className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none transition-colors"
-                          value={newTask.deadline}
-                          onChange={e => setNewTask({...newTask, deadline: e.target.value})}
-                       />
-                     </div>
-                     <div>
-                       <label className="text-xs text-gray-400 block mb-1">Time</label>
-                       <input 
-                          type="time"
-                          className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none transition-colors"
-                          value={newTask.deadlineTime}
-                          onChange={e => setNewTask({...newTask, deadlineTime: e.target.value})}
-                       />
-                     </div>
-                   </div>
-                 </div>
-             </div>
-          )}
-
-          <div className="flex flex-col gap-2">
-            {/* Priority and Duration Row */}
-            <div className="flex gap-2">
-              <select
-                 className="bg-gray-900 border border-gray-600 rounded-lg px-2 py-2 text-xs text-white outline-none flex-1 focus:border-blue-600"
-                 value={newTask.priority}
-                 onChange={e => setNewTask({...newTask, priority: e.target.value as Priority})}
+          <div className="mb-3 grid grid-cols-3 gap-2">
+            {QUICK_DURATIONS.map((duration) => (
+              <button
+                type="button"
+                key={duration.label}
+                onClick={() => updateDuration(duration.minutes)}
+                className={`rounded-md px-2 py-1.5 text-xs transition-colors ${
+                  currentDuration === duration.minutes ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+                }`}
               >
-                {PRIORITIES.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
-              </select>
-              
-              <Button type="submit" size="sm" className="px-3">
-                 <ArrowUpCircle size={18} />
-              </Button>
+                {duration.label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <label className="space-y-1 text-gray-500">
+              <span>Days</span>
+              <input
+                type="number"
+                min="0"
+                className="w-full rounded-md border border-gray-700 bg-gray-950 px-2 py-1.5 text-white outline-none focus:border-blue-500"
+                value={newTask.durationDays}
+                onChange={(event) => updateDurationPart('durationDays', Number(event.target.value))}
+              />
+            </label>
+            <label className="space-y-1 text-gray-500">
+              <span>Hours</span>
+              <input
+                type="number"
+                min="0"
+                className="w-full rounded-md border border-gray-700 bg-gray-950 px-2 py-1.5 text-white outline-none focus:border-blue-500"
+                value={newTask.durationHours}
+                onChange={(event) => updateDurationPart('durationHours', Number(event.target.value))}
+              />
+            </label>
+            <label className="space-y-1 text-gray-500">
+              <span>Minutes</span>
+              <input
+                type="number"
+                min="0"
+                step="5"
+                className="w-full rounded-md border border-gray-700 bg-gray-950 px-2 py-1.5 text-white outline-none focus:border-blue-500"
+                value={newTask.durationMinutes}
+                onChange={(event) => updateDurationPart('durationMinutes', Number(event.target.value))}
+              />
+            </label>
+          </div>
+        </div>
+
+        {showScheduleInputs && (
+          <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3">
+            <div>
+              <h4 className="mb-2 flex items-center gap-1 text-xs font-medium text-gray-300">
+                <Calendar size={12} /> Schedule
+              </h4>
+              <div className="space-y-2">
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-gray-700 bg-gray-900 px-2.5 py-2 text-xs text-white outline-none focus:border-blue-500"
+                  value={newTask.date}
+                  onChange={(event) => setNewTask({ ...newTask, date: event.target.value })}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeSelect value={newTask.time} onChange={updateStartTime} placeholder="Start" />
+                  <TimeSelect value={newTask.endTime} onChange={updateEndTime} placeholder="End" />
+                </div>
+                {newTask.time && newTask.endTime && (
+                  <p className="text-[11px] text-gray-500">
+                    Range synced with duration: {newTask.time} - {newTask.endTime}
+                  </p>
+                )}
+              </div>
             </div>
-            
-            {/* Duration Settings Row */}
-            <div className="flex gap-2 items-center">
-              <span className="text-xs text-gray-400 shrink-0">Duration:</span>
-              <div className="flex gap-2 items-center flex-1">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min="0"
-                    className="w-12 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-600"
-                    value={newTask.durationDays}
-                    onChange={e => {
-                      const days = parseInt(e.target.value) || 0;
-                      setNewTask({...newTask, durationDays: days});
-                      // Auto-calculate end time if start time is set
-                      if (newTask.time) {
-                        const [hours, minutes] = newTask.time.split(':').map(Number);
-                        const startTime = new Date();
-                        startTime.setHours(hours, minutes, 0, 0);
-                        
-                        const totalMinutes = (days * 24 * 60) + (newTask.durationHours * 60) + newTask.durationMinutes;
-                        const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
-                        
-                        const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
-                                             endTime.getMinutes().toString().padStart(2, '0');
-                        setNewTask(prev => ({...prev, endTime: endTimeString}));
-                      }
-                    }}
-                    placeholder="0"
-                  />
-                  <span className="text-xs text-gray-500">d</span>
-                </div>
-                
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min="0"
-                    max="23"
-                    className="w-12 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-600"
-                    value={newTask.durationHours}
-                    onChange={e => {
-                      const hours = parseInt(e.target.value) || 0;
-                      setNewTask({...newTask, durationHours: hours});
-                      // Auto-calculate end time if start time is set
-                      if (newTask.time) {
-                        const [startHours, startMinutes] = newTask.time.split(':').map(Number);
-                        const startTime = new Date();
-                        startTime.setHours(startHours, startMinutes, 0, 0);
-                        
-                        const totalMinutes = (newTask.durationDays * 24 * 60) + (hours * 60) + newTask.durationMinutes;
-                        const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
-                        
-                        const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
-                                             endTime.getMinutes().toString().padStart(2, '0');
-                        setNewTask(prev => ({...prev, endTime: endTimeString}));
-                      }
-                    }}
-                    placeholder="0"
-                  />
-                  <span className="text-xs text-gray-500">h</span>
-                </div>
-                
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min="0"
-                    max="59"
-                    className="w-12 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-600"
-                    value={newTask.durationMinutes}
-                    onChange={e => {
-                      const minutes = parseInt(e.target.value) || 0;
-                      setNewTask({...newTask, durationMinutes: minutes});
-                      // Auto-calculate end time if start time is set
-                      if (newTask.time) {
-                        const [startHours, startMinutes] = newTask.time.split(':').map(Number);
-                        const startTime = new Date();
-                        startTime.setHours(startHours, startMinutes, 0, 0);
-                        
-                        const totalMinutes = (newTask.durationDays * 24 * 60) + (newTask.durationHours * 60) + minutes;
-                        const endTime = new Date(startTime.getTime() + totalMinutes * 60000);
-                        
-                        const endTimeString = endTime.getHours().toString().padStart(2, '0') + ':' + 
-                                             endTime.getMinutes().toString().padStart(2, '0');
-                        setNewTask(prev => ({...prev, endTime: endTimeString}));
-                      }
-                    }}
-                    placeholder="30"
-                  />
-                  <span className="text-xs text-gray-500">m</span>
-                </div>
+
+            <div>
+              <h4 className="mb-2 flex items-center gap-1 text-xs font-medium text-red-400">
+                <Flag size={12} /> Deadline
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  className="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-2 text-xs text-white outline-none focus:border-red-500"
+                  value={newTask.deadline}
+                  onChange={(event) => setNewTask({ ...newTask, deadline: event.target.value })}
+                />
+                <TimeSelect
+                  value={newTask.deadlineTime}
+                  onChange={(deadlineTime) => setNewTask({ ...newTask, deadlineTime })}
+                  placeholder="Due time"
+                />
               </div>
             </div>
           </div>
-        </form>
-      </div>
+        )}
+      </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

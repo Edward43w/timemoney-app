@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { Expense, Budget, EXPENSE_CATEGORIES } from '../types';
+import { Expense, Budget } from '../types';
 import { formatCurrency, generateId, formatDateISO } from '../utils';
 import { Button } from './Button';
-import { Plus, DollarSign, Settings, TrendingUp, Trash2, History } from 'lucide-react';
+import { DollarSign, Settings, TrendingUp } from 'lucide-react';
 
 interface FinanceDashboardProps {
   expenses: Expense[];
@@ -11,6 +11,7 @@ interface FinanceDashboardProps {
   onDeleteExpense: (expenseId: string) => void;
   budget: Budget;
   onUpdateBudget: (budget: Budget) => void;
+  expenseCategories: string[];
   currentDate: Date;
 }
 
@@ -19,9 +20,9 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   expenses,
   onAddExpense,
-  onDeleteExpense,
   budget,
   onUpdateBudget,
+  expenseCategories,
   currentDate
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -228,7 +229,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Category</label>
                 <div className="grid grid-cols-4 gap-2">
-                  {EXPENSE_CATEGORIES.map(cat => (
+                  {expenseCategories.map(cat => (
                     <button
                       type="button"
                       key={cat}

@@ -4,16 +4,14 @@ import {
   updateDoc, 
   deleteDoc, 
   doc, 
-  getDocs, 
   onSnapshot, 
   query, 
   orderBy, 
   Timestamp,
-  setDoc,
-  where 
+  setDoc
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Task, Expense, Budget } from './types';
+import { Task, Expense, Budget, DEFAULT_EXPENSE_CATEGORIES } from './types';
 
 // 獲取當前用戶 ID
 const getCurrentUserId = (): string | null => {
@@ -36,20 +34,16 @@ const getUserCollection = (baseCollection: string): string => {
 // 新增任務
 export const addTask = async (task: Omit<Task, 'id'>) => {
   try {
-    console.log('Adding task to Firebase:', task); // Debug log
-    
     // Remove undefined values to avoid Firebase errors
     const cleanTask = Object.fromEntries(
-      Object.entries(task).filter(([_, value]) => value !== undefined)
+      Object.entries(task).filter((entry) => entry[1] !== undefined)
     );
-    console.log('Cleaned task data:', cleanTask); // Debug log
     
     const docRef = await addDoc(collection(db, getUserCollection('tasks')), {
       ...cleanTask,
       createdAt: Timestamp.now()
     });
     
-    console.log('Task added successfully with ID:', docRef.id); // Debug log
     return docRef.id;
   } catch (error) {
     console.error('Error adding task:', error);
@@ -188,6 +182,37 @@ export const subscribeToBudget = (callback: (budget: Budget) => void) => {
         // 即使建立失敗，也回傳預設值讓應用程式正常運作
         callback(defaultBudget);
       }
+    }
+  });
+};
+
+export const updateExpenseCategories = async (categories: string[]) => {
+  const settingsRef = doc(db, getUserCollection('settings'), 'expenseCategories');
+  const cleanCategories = categories
+    .map((category) => category.trim())
+    .filter((category, index, source) => category && source.indexOf(category) === index);
+
+  await setDoc(settingsRef, {
+    categories: cleanCategories.length > 0 ? cleanCategories : DEFAULT_EXPENSE_CATEGORIES,
+    updatedAt: Timestamp.now()
+  }, { merge: true });
+};
+
+export const subscribeToExpenseCategories = (callback: (categories: string[]) => void) => {
+  const settingsRef = doc(db, getUserCollection('settings'), 'expenseCategories');
+
+  return onSnapshot(settingsRef, async (doc) => {
+    if (doc.exists()) {
+      const data = doc.data();
+      const categories = Array.isArray(data.categories) ? data.categories.filter((category) => typeof category === 'string') : [];
+      callback(categories.length > 0 ? categories : DEFAULT_EXPENSE_CATEGORIES);
+    } else {
+      try {
+        await updateExpenseCategories(DEFAULT_EXPENSE_CATEGORIES);
+      } catch (error) {
+        console.error('Error creating default expense categories:', error);
+      }
+      callback(DEFAULT_EXPENSE_CATEGORIES);
     }
   });
 };

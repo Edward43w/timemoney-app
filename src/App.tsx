@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { LayoutDashboard, Calendar as CalendarIcon, Wallet, ListTodo, Menu, X, LogOut } from 'lucide-react';
-import { Task, Expense, Budget, ViewMode } from './types';
+import { Calendar as CalendarIcon, Wallet, ListTodo, Menu, X, LogOut } from 'lucide-react';
+import { Task, Expense, Budget, ViewMode, DEFAULT_EXPENSE_CATEGORIES } from './types';
 import { CalendarView } from './components/CalendarView';
 import { TaskList } from './components/TaskList';
 import { FinanceDashboard } from './components/FinanceDashboard';
@@ -11,12 +11,14 @@ import {
   subscribeToTasks, 
   subscribeToExpenses, 
   subscribeToBudget,
+  subscribeToExpenseCategories,
   addTask as firebaseAddTask,
   updateTask as firebaseUpdateTask,
   deleteTask as firebaseDeleteTask,
   addExpense as firebaseAddExpense,
   deleteExpense as firebaseDeleteExpense,
-  updateBudget as firebaseUpdateBudget
+  updateBudget as firebaseUpdateBudget,
+  updateExpenseCategories as firebaseUpdateExpenseCategories
 } from './firebaseService';
 import { onAuthChange, signOut } from './authService';
 
@@ -42,6 +44,7 @@ const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [budget, setBudget] = useState<Budget>(DEFAULT_BUDGET);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>(DEFAULT_EXPENSE_CATEGORIES);
 
   // --- Authentication Effect ---
   useEffect(() => {
@@ -56,10 +59,6 @@ const App: React.FC = () => {
   // --- Firebase 監聽器 ---
   useEffect(() => {
     if (!user) {
-      // 如果未登入，清空資料
-      setTasks([]);
-      setExpenses([]);
-      setBudget(DEFAULT_BUDGET);
       return;
     }
 
@@ -71,12 +70,14 @@ const App: React.FC = () => {
     
     // 監聽預算變化
     const unsubscribeBudget = subscribeToBudget(setBudget);
+    const unsubscribeExpenseCategories = subscribeToExpenseCategories(setExpenseCategories);
 
     // 清理函數
     return () => {
       unsubscribeTasks();
       unsubscribeExpenses();
       unsubscribeBudget();
+      unsubscribeExpenseCategories();
     };
   }, [user]);
 
@@ -85,6 +86,7 @@ const App: React.FC = () => {
     try {
       // 移除 id，因為 Firestore 會自動生成
       const { id, ...taskWithoutId } = task;
+      void id;
       await firebaseAddTask(taskWithoutId);
     } catch (error) {
       console.error('Failed to add task:', error);
@@ -111,6 +113,7 @@ const App: React.FC = () => {
     try {
       // 移除 id，因為 Firestore 會自動生成
       const { id, ...expenseWithoutId } = expense;
+      void id;
       await firebaseAddExpense(expenseWithoutId);
     } catch (error) {
       console.error('Failed to add expense:', error);
@@ -130,6 +133,14 @@ const App: React.FC = () => {
       await firebaseUpdateBudget(newBudget);
     } catch (error) {
       console.error('Failed to update budget:', error);
+    }
+  };
+
+  const handleUpdateExpenseCategories = async (categories: string[]) => {
+    try {
+      await firebaseUpdateExpenseCategories(categories);
+    } catch (error) {
+      console.error('Failed to update expense categories:', error);
     }
   };
 
@@ -165,10 +176,10 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 font-sans flex overflow-hidden">
+    <div className="h-screen max-h-screen bg-gray-900 text-gray-200 font-sans flex overflow-hidden">
       
       {/* Sidebar (Desktop) */}
-      <aside className={`flex flex-col border-r border-gray-700 bg-gray-800 transition-all duration-300 ${isSidebarOpen ? 'w-80' : 'w-16'}`}>
+      <aside className={`hidden md:flex flex-col border-r border-gray-700 bg-gray-800 transition-all duration-300 ${isSidebarOpen ? 'w-80' : 'w-16'}`}>
         {isSidebarOpen && (
             <TaskList 
                 className="h-full border-none"
@@ -181,12 +192,23 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main className="min-w-0 flex-1 flex flex-col h-screen overflow-hidden relative">
         
         {/* Header */}
         <header className="h-auto min-h-[64px] py-2 border-b border-gray-700 flex flex-wrap items-center justify-between px-4 bg-gray-900/80 backdrop-blur z-20 gap-2">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-700 rounded-lg text-gray-400">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 hover:bg-gray-700 rounded-lg text-gray-400 md:hidden"
+              aria-label="Open task list"
+            >
+               <Menu size={20} />
+            </button>
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="hidden md:block p-2 hover:bg-gray-700 rounded-lg text-gray-400"
+              aria-label="Toggle task sidebar"
+            >
                <ListTodo size={20} />
             </button>
             <h1 className="text-lg md:text-xl font-bold bg-gradient-to-r from-blue-500 to-green-500 bg-clip-text text-transparent truncate">
@@ -238,7 +260,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-2 md:p-6 custom-scrollbar relative bg-gray-900">
+        <div className="min-h-0 flex-1 overflow-hidden p-2 md:p-6 relative bg-gray-900">
            {activeTab === 'calendar' ? (
                <CalendarView 
                   viewMode={viewMode}
@@ -247,6 +269,8 @@ const App: React.FC = () => {
                   tasks={tasks}
                   expenses={expenses}
                   budget={budget}
+                  expenseCategories={expenseCategories}
+                  onUpdateExpenseCategories={handleUpdateExpenseCategories}
                   onTaskSchedule={handleScheduleTask}
                   onUpdateTask={handleUpdateTask}
                   onDeleteTask={handleDeleteTask}
@@ -261,6 +285,7 @@ const App: React.FC = () => {
                   onDeleteExpense={handleDeleteExpense}
                   budget={budget}
                   onUpdateBudget={handleUpdateBudget}
+                  expenseCategories={expenseCategories}
                   currentDate={currentDate}
                />
            )}

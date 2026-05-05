@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Task, Expense, Budget, Priority, PRIORITIES } from '../types';
 import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange, TASK_COLORS } from '../utils';
-import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, GripVertical, Flag, Trash2, Edit2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, Flag, Trash2, Edit2 } from 'lucide-react';
 import { Button } from './Button';
 
 interface CalendarViewProps {
@@ -11,6 +11,8 @@ interface CalendarViewProps {
   tasks: Task[];
   expenses: Expense[];
   budget: Budget;
+  expenseCategories: string[];
+  onUpdateExpenseCategories: (categories: string[]) => void;
   onTaskSchedule: (taskId: string, date: string, time: string) => void;
   onUpdateTask: (task: Task) => void;
   onDeleteTask: (id: string) => void;
@@ -26,6 +28,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   tasks,
   expenses,
   budget,
+  expenseCategories,
+  onUpdateExpenseCategories,
   onTaskSchedule,
   onUpdateTask,
   onDeleteTask,
@@ -35,8 +39,55 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 }) => {
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food' });
+  const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food', date: formatDateISO(new Date()) });
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+  const [categoryDrafts, setCategoryDrafts] = useState<string[]>(expenseCategories);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  useEffect(() => {
+    setCategoryDrafts(expenseCategories);
+    setNewExpense((current) => ({
+      ...current,
+      category: expenseCategories.includes(current.category) ? current.category : expenseCategories[0] || 'Other',
+    }));
+  }, [expenseCategories]);
+
+  const resetExpenseForm = (date = formatDateISO(new Date())) => {
+    setNewExpense({ title: '', amount: 0, category: expenseCategories[0] || 'Other', date });
+  };
+
+  const saveCategoryDrafts = () => {
+    const cleanCategories = categoryDrafts
+      .map((category) => category.trim())
+      .filter((category, index, source) => category && source.indexOf(category) === index);
+
+    if (cleanCategories.length === 0) return;
+
+    onUpdateExpenseCategories(cleanCategories);
+    setCategoryDrafts(cleanCategories);
+    setNewExpense((current) => ({
+      ...current,
+      category: cleanCategories.includes(current.category) ? current.category : cleanCategories[0],
+    }));
+  };
+
+  const addCategoryDraft = () => {
+    const nextCategory = newCategoryName.trim();
+    if (!nextCategory || categoryDrafts.includes(nextCategory)) return;
+
+    setCategoryDrafts([...categoryDrafts, nextCategory]);
+    setNewCategoryName('');
+  };
+
+  const removeCategoryDraft = (category: string) => {
+    if (categoryDrafts.length <= 1) return;
+    const nextCategories = categoryDrafts.filter((item) => item !== category);
+    setCategoryDrafts(nextCategories);
+    setNewExpense((current) => ({
+      ...current,
+      category: current.category === category ? nextCategories[0] : current.category,
+    }));
+  };
 
   // --- Drag and Drop Handlers ---
   const handleDragOver = (e: React.DragEvent) => {
@@ -123,7 +174,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const daysInMonth = lastDay.getDate();
 
     const grid = [];
-    for(let i=0; i<startPadding; i++) grid.push(<div key={`pad-${i}`} className="bg-gray-800/30 border border-gray-600/50 h-[100px]"></div>);
+    for(let i=0; i<startPadding; i++) grid.push(<div key={`pad-${i}`} className="min-h-0 bg-gray-800/30 border border-gray-600/50"></div>);
     
     for(let d=1; d<=daysInMonth; d++) {
         const date = new Date(year, month, d);
@@ -137,7 +188,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, date)}
               onClick={() => setSelectedDayDetails(date)}
-              className={`relative border border-gray-600 p-1 md:p-2 h-[100px] flex flex-col justify-between group hover:bg-gray-700/50 transition-colors cursor-pointer ${isToday ? 'bg-gray-700 ring-1 ring-blue-500' : 'bg-gray-800'}`}
+              className={`relative min-h-0 border border-gray-600 p-1 md:p-2 flex flex-col justify-between group hover:bg-gray-700/50 transition-colors cursor-pointer ${isToday ? 'bg-gray-700 ring-1 ring-blue-500' : 'bg-gray-800'}`}
             >
                <div className="flex justify-between items-start">
                   <span className={`text-xs md:text-sm font-semibold w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>{d}</span>
@@ -178,11 +229,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     }
 
     return (
-        <div className="h-full flex flex-col">
+        <div className="h-full min-h-0 flex flex-col">
             <div className="grid grid-cols-7 text-center text-[10px] md:text-xs text-gray-500 font-medium py-2 border-b border-gray-600">
                 {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => <div key={d}>{d}</div>)}
             </div>
-            <div className="grid grid-cols-7 flex-1 overflow-y-auto" style={{ gridTemplateRows: 'repeat(6, minmax(100px, 1fr))' }}>
+            <div className="grid grid-cols-7 flex-1 min-h-0 overflow-hidden" style={{ gridTemplateRows: 'repeat(6, minmax(0, 1fr))' }}>
                 {grid}
             </div>
         </div>
@@ -685,12 +736,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}
                                         className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
                                     >
-                                        <option value="Food">Food</option>
-                                        <option value="Transport">Transport</option>
-                                        <option value="Entertainment">Entertainment</option>
-                                        <option value="Shopping">Shopping</option>
-                                        <option value="Bills">Bills</option>
-                                        <option value="Other">Other</option>
+                                        {expenseCategories.map((category) => (
+                                          <option key={category} value={category}>{category}</option>
+                                        ))}
                                     </select>
                                     <Button
                                         onClick={() => {
@@ -700,7 +748,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                                     date: formatDateISO(selectedDayDetails!),
                                                     id: Date.now().toString()
                                                 });
-                                                setNewExpense({ title: '', amount: 0, category: 'Food' });
+                                                resetExpenseForm(formatDateISO(selectedDayDetails!));
                                             }
                                         }}
                                         size="sm"
@@ -760,6 +808,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               />
             </div>
             
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
+              <input
+                type="date"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                value={newExpense.date}
+                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Amount</label>
@@ -780,13 +838,67 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   value={newExpense.category}
                   onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
                 >
-                  <option value="Food">Food</option>
-                  <option value="Transport">Transport</option>
-                  <option value="Entertainment">Entertainment</option>
-                  <option value="Shopping">Shopping</option>
-                  <option value="Bills">Bills</option>
-                  <option value="Other">Other</option>
+                  {expenseCategories.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-200">Categories</h4>
+                  <p className="text-xs text-gray-500">Edit, add, or remove options for future expenses.</p>
+                </div>
+                <Button size="sm" variant="secondary" onClick={saveCategoryDrafts}>
+                  Save
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {categoryDrafts.map((category, index) => (
+                  <div key={`${category}-${index}`} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                      value={category}
+                      onChange={(event) => {
+                        const nextDrafts = [...categoryDrafts];
+                        nextDrafts[index] = event.target.value;
+                        setCategoryDrafts(nextDrafts);
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeCategoryDraft(category)}
+                      disabled={categoryDrafts.length <= 1}
+                      className="px-2 text-red-300 hover:text-red-200"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-blue-500"
+                  placeholder="New category"
+                  value={newCategoryName}
+                  onChange={(event) => setNewCategoryName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addCategoryDraft();
+                    }
+                  }}
+                />
+                <Button size="sm" type="button" onClick={addCategoryDraft}>
+                  Add
+                </Button>
               </div>
             </div>
             
@@ -803,14 +915,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   if (newExpense.title && newExpense.amount > 0) {
                     onAddExpense({
                       ...newExpense,
-                      date: formatDateISO(currentDate),
+                      date: newExpense.date || formatDateISO(new Date()),
                       id: Date.now().toString()
                     });
-                    setNewExpense({ title: '', amount: 0, category: 'Food' });
+                    resetExpenseForm();
                     setShowAddExpenseModal(false);
                   }
                 }}
-                disabled={!newExpense.title || newExpense.amount <= 0}
+                disabled={!newExpense.title || newExpense.amount <= 0 || !newExpense.date}
                 className="flex-1"
               >
                 Add Expense
@@ -823,7 +935,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 rounded-lg md:rounded-2xl border border-gray-600 overflow-hidden shadow-2xl relative">
+    <div className="flex h-full min-h-0 flex-col bg-gray-900 rounded-lg md:rounded-2xl border border-gray-600 overflow-hidden shadow-2xl relative">
       <div className="flex items-center justify-between mb-0 px-3 py-3 md:px-4 md:pt-4 md:pb-2 border-b border-gray-600 bg-gray-800/50 shrink-0">
         <div className="flex items-center gap-4">
           <h2 className="text-lg md:text-2xl font-bold text-white tracking-tight">
@@ -846,13 +958,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           })()}
         </div>
         <div className="flex items-center gap-2">
-          <Button 
-            onClick={() => setShowAddExpenseModal(true)} 
-            className="flex items-center gap-2 px-3 py-2 text-sm"
-            size="sm"
-          >
-            <Plus size={16} /> Log Expense
-          </Button>
           <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-600">
              <Button variant="ghost" onClick={handlePrev} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronLeft size={16}/></Button>
              <Button variant="ghost" onClick={() => onDateChange(new Date())} size="sm" className="h-7 md:h-8 text-xs px-2">Today</Button>
@@ -866,6 +971,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         {viewMode === 'week' && renderWeek()}
         {viewMode === 'day' && renderDay()}
       </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          resetExpenseForm();
+          setShowAddExpenseModal(true);
+        }}
+        className="absolute bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
+        aria-label="Log expense"
+      >
+        <DollarSign size={24} />
+      </button>
 
       {/* Render Modals */}
       {renderDayDetailModal()}

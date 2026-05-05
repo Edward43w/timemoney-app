@@ -7,21 +7,12 @@ export const LoginPage: React.FC = () => {
   const handleLogin = async () => {
     try {
       await signInWithGoogle();
-    } catch (error: any) {
-      console.error('登入失敗:', error);
-      
-      if (error.message?.includes('開發環境限制')) {
-        alert('⚠️ 開發環境限制\n\n' +
-              '由於瀏覽器安全政策，Google 登入在 localhost 無法使用。\n\n' +
-              '請在正式部署的網站上測試登入功能：\n' +
-              'https://edward43w.github.io/timemoney-app/');
-      } else {
-        alert('登入失敗：' + (error.message || '未知錯誤'));
-      }
+    } catch (error: unknown) {
+      console.error('Sign-in failed:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      alert(`登入失敗：${message}`);
     }
   };
-
-
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
@@ -38,7 +29,7 @@ export const LoginPage: React.FC = () => {
           <h2 className="text-xl font-semibold text-white mb-4 text-center">
             登入以保護您的資料
           </h2>
-          
+
           <div className="space-y-4 mb-6">
             <div className="flex items-center text-sm text-gray-300">
               <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
@@ -61,12 +52,6 @@ export const LoginPage: React.FC = () => {
             <LogIn size={20} />
             <span>使用 Google 登入</span>
           </Button>
-
-          <div className="text-center mt-4">
-            <p className="text-xs text-gray-400">
-              🔒 安全登入 • ☁️ 雲端同步 • 📱 跨裝置使用
-            </p>
-          </div>
 
           <p className="text-xs text-gray-500 text-center mt-4">
             登入後您的所有資料將安全地儲存在個人帳戶中
