@@ -31,6 +31,9 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   // Form State
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({ category: 'Food', date: formatDateISO(new Date()) });
   const [tempBudget, setTempBudget] = useState<Budget>(budget);
+  const selectedExpenseCategory = newExpense.category && expenseCategories.includes(newExpense.category)
+    ? newExpense.category
+    : expenseCategories[0] || 'Other';
 
   // Calculations
   const currentMonth = currentDate.getMonth();
@@ -78,11 +81,11 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
         id: generateId(),
         title: newExpense.title,
         amount: Number(newExpense.amount),
-        category: newExpense.category || 'Other',
+        category: selectedExpenseCategory,
         date: newExpense.date,
       });
       setShowAddModal(false);
-      setNewExpense({ category: 'Food', date: formatDateISO(new Date()), title: '', amount: 0 });
+      setNewExpense({ category: expenseCategories[0] || 'Other', date: formatDateISO(new Date()), title: '', amount: 0 });
     }
   };
 
@@ -235,7 +238,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                       key={cat}
                       onClick={() => setNewExpense({...newExpense, category: cat})}
                       className={`text-xs px-2 py-1.5 rounded-md transition-colors ${
-                        newExpense.category === cat 
+                        selectedExpenseCategory === cat
                           ? 'bg-blue-600 text-white' 
                           : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                       }`}

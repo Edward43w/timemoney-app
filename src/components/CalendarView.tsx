@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Task, Expense, Budget, Priority, PRIORITIES } from '../types';
-import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange, TASK_COLORS } from '../utils';
-import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, Flag, Trash2, Edit2 } from 'lucide-react';
+import { Task, Expense, Budget } from '../types';
+import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange } from '../utils';
+import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, Flag, Trash2 } from 'lucide-react';
+import { DEFAULT_TASK_FORM, TaskFormState, formStateToTaskFields, formatDuration, taskToFormState } from '../taskFormUtils';
 import { Button } from './Button';
+import { TaskFormModal } from './TaskFormModal';
 
 interface CalendarViewProps {
   viewMode: 'day' | 'week' | 'month';
@@ -39,6 +41,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 }) => {
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingTaskForm, setEditingTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
+  const [editingColor, setEditingColor] = useState('#3b82f6');
   const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food', date: formatDateISO(new Date()) });
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<string[]>(expenseCategories);
@@ -87,6 +91,71 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       ...current,
       category: current.category === category ? nextCategories[0] : current.category,
     }));
+  };
+
+  const openTaskEditor = (task: Task) => {
+    setEditingTask(task);
+    setEditingTaskForm(taskToFormState(task));
+    setEditingColor(task.color || '#3b82f6');
+  };
+
+  const closeTaskEditor = () => {
+    setEditingTask(null);
+  };
+
+  const saveEditingTask = () => {
+    if (!editingTask || !editingTaskForm.title.trim()) return;
+    onUpdateTask({
+      ...editingTask,
+      ...formStateToTaskFields(editingTaskForm),
+      color: editingColor,
+    });
+    closeTaskEditor();
+  };
+
+  const deleteEditingTask = () => {
+    if (!editingTask) return;
+    onDeleteTask(editingTask.id);
+    closeTaskEditor();
+  };
+
+  const renderDeadlineChips = (deadlines: Task[], maxItems: number, dense = false) => {
+    if (deadlines.length === 0) return null;
+
+    const visibleDeadlines = deadlines.slice(0, maxItems);
+    const hiddenCount = deadlines.length - visibleDeadlines.length;
+
+    return (
+      <div className={dense ? 'space-y-0.5' : 'space-y-1'}>
+        {visibleDeadlines.map((deadline) => (
+          <button
+            key={deadline.id}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openTaskEditor(deadline);
+            }}
+            className={`flex w-full min-w-0 items-center gap-1 rounded border border-red-500/30 bg-red-500/10 text-left text-red-200 hover:bg-red-500/20 ${
+              dense ? 'px-1 py-0.5 text-[9px] md:text-[10px]' : 'px-2 py-1 text-[11px]'
+            }`}
+            title={`Deadline: ${deadline.title}${deadline.deadlineTime ? ` @ ${deadline.deadlineTime}` : ''}`}
+          >
+            <Flag size={dense ? 9 : 11} className="shrink-0 text-red-400" fill="currentColor" />
+            <span className="truncate">{deadline.title}</span>
+            {deadline.deadlineTime && (
+              <span className="ml-auto shrink-0 rounded bg-red-900/40 px-1 text-[9px] text-red-100">
+                {deadline.deadlineTime}
+              </span>
+            )}
+          </button>
+        ))}
+        {hiddenCount > 0 && (
+          <div className={dense ? 'pl-1 text-[9px] text-red-300/80' : 'text-[10px] text-red-300/80'}>
+            +{hiddenCount} deadlines
+          </div>
+        )}
+      </div>
+    );
   };
 
   // --- Drag and Drop Handlers ---
@@ -180,6 +249,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         const date = new Date(year, month, d);
         const { dayTasks, totalSpent, isOverBudget, deadlines } = getDayStats(date);
         const isToday = isSameDay(date, new Date());
+        const visibleTaskLimit = deadlines.length > 0 ? 2 : 3;
 
         grid.push(
             <div 
@@ -192,31 +262,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             >
                <div className="flex justify-between items-start">
                   <span className={`text-xs md:text-sm font-semibold w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>{d}</span>
-                  {/* Deadline Indicator for Month View */}
-                  {deadlines.length > 0 && (
-                      <div className="flex -space-x-1">
-                          {deadlines.slice(0, 2).map(dt => (
-                              <div key={dt.id} className="text-red-500" title={`Due: ${dt.title} ${dt.deadlineTime ? '@ ' + dt.deadlineTime : ''}`}>
-                                  <Flag size={12} fill="currentColor" />
-                              </div>
-                          ))}
-                      </div>
-                  )}
                </div>
 
                <div className="flex-1 mt-1 space-y-0.5 md:space-y-1 overflow-hidden">
-                  {dayTasks.slice(0, 3).map(task => (
+                  {renderDeadlineChips(deadlines, 2, true)}
+                  {dayTasks.slice(0, visibleTaskLimit).map(task => (
                       <div 
                         key={task.id} 
                         className="text-[9px] md:text-[10px] rounded px-1 py-0.5 truncate text-white shadow-sm border-l-2 border-white/30 hover:brightness-110 cursor-pointer"
                         style={{ backgroundColor: task.color || '#3b82f6' }}
-                        onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                        onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}
                       >
                           {task.time && <span className="opacity-80 mr-1 hidden xs:inline">{task.time}</span>}
                           {task.title}
                       </div>
                   ))}
-                  {dayTasks.length > 3 && <div className="text-[8px] md:text-[9px] text-gray-500 pl-1">+{dayTasks.length - 3} more</div>}
+                  {dayTasks.length > visibleTaskLimit && <div className="text-[8px] md:text-[9px] text-gray-500 pl-1">+{dayTasks.length - visibleTaskLimit} more</div>}
                </div>
 
                {totalSpent > 0 && (
@@ -263,7 +324,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 <div key={i} className={`py-3 px-1 border-r border-gray-600 last:border-r-0 ${isToday ? 'bg-gray-700' : ''}`}>
                                      <div className="text-xs text-gray-500 uppercase flex items-center justify-center gap-1">
                                          {d.toLocaleDateString('en-US', { weekday: 'short' })}
-                                         {deadlines.length > 0 && <Flag size={10} className="text-red-500" fill="currentColor"/>}
+                                         {deadlines.length > 0 && (
+                                           <span className="flex items-center gap-0.5 rounded bg-red-500/10 px-1 text-[10px] text-red-300">
+                                             <Flag size={9} fill="currentColor" /> {deadlines.length}
+                                           </span>
+                                         )}
                                      </div>
                                      <div 
                                         className={`text-lg font-bold w-8 h-8 mx-auto flex items-center justify-center rounded-full cursor-pointer hover:bg-gray-600 ${isToday ? 'bg-blue-600 text-white hover:bg-blue-500' : 'text-white'}`}
@@ -281,7 +346,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      
                      <div className="grid grid-cols-7 flex-1 min-h-[400px]">
                         {weekDays.map((d, i) => {
-                             const { dayTasks } = getDayStats(d);
+                             const { dayTasks, deadlines } = getDayStats(d);
+                             const visibleTaskLimit = deadlines.length > 0 ? 4 : dayTasks.length;
                              return (
                                  <div 
                                     key={i} 
@@ -291,12 +357,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     className="border-r border-gray-600 p-1 space-y-1 relative group hover:bg-gray-800/50 transition-colors" 
                                     onClick={() => onDateChange(d)}
                                  >
-                                     {dayTasks.map(task => (
+                                     {renderDeadlineChips(deadlines, 2)}
+                                     {dayTasks.slice(0, visibleTaskLimit).map(task => (
                                          <div 
                                             key={task.id} 
                                             className="p-1.5 rounded text-xs text-white cursor-pointer mb-1 shadow-sm hover:brightness-110 border border-white/10"
                                             style={{ backgroundColor: task.color || '#3b82f6' }}
-                                            onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                                            onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}
                                          >
                                              <div className="font-semibold truncate">{task.title}</div>
                                              <div className="opacity-80 text-[10px] flex items-center gap-1">
@@ -304,6 +371,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                              </div>
                                          </div>
                                      ))}
+                                     {dayTasks.length > visibleTaskLimit && (
+                                       <div className="pl-1 text-[10px] text-gray-500">+{dayTasks.length - visibleTaskLimit} more tasks</div>
+                                     )}
                                  </div>
                              )
                         })}
@@ -347,7 +417,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                              </div>
                              <div className="flex flex-wrap gap-2">
                                  {deadlines.map(t => (
-                                     <div key={t.id} onClick={() => setEditingTask(t)} className="bg-gray-700 border border-red-900/50 px-2 py-1 rounded text-xs text-red-200 flex items-center gap-1 cursor-pointer hover:bg-gray-600">
+                                     <div key={t.id} onClick={() => openTaskEditor(t)} className="bg-gray-700 border border-red-900/50 px-2 py-1 rounded text-xs text-red-200 flex items-center gap-1 cursor-pointer hover:bg-gray-600">
                                          <span className="w-1 h-3 bg-red-500 rounded-full"></span>
                                          <span>{t.title}</span>
                                          {t.deadlineTime && <span className="bg-red-900/50 px-1 rounded text-[10px]">{t.deadlineTime}</span>}
@@ -372,7 +442,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     key={t.id} 
                                     className="px-2 py-1 rounded border border-white/10 text-xs flex items-center gap-2 text-white cursor-pointer hover:brightness-110"
                                     style={{ backgroundColor: t.color || '#3b82f6' }}
-                                    onClick={() => setEditingTask(t)}
+                                    onClick={() => openTaskEditor(t)}
                                 >
                                     {t.title}
                                 </div>
@@ -417,7 +487,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     height: `${Math.max(heightMinutes, 30)}px`,
                                     backgroundColor: task.color || '#3b82f6'
                                 }}
-                                onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                                onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}
                              >
                                  <div className="font-bold text-xs md:text-sm text-white truncate drop-shadow-md">{task.title}</div>
                                  <div className="text-[10px] md:text-xs text-white/90 flex items-center gap-1 font-medium">
@@ -494,134 +564,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     if (!editingTask) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-             <div className="bg-gray-800 border border-gray-600 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Edit2 size={18} className="text-blue-500"/> Edit Task
-                    </h3>
-                    <button onClick={() => setEditingTask(null)} className="text-gray-400 hover:text-white"><X size={20}/></button>
-                </div>
-
-                <div className="space-y-3">
-                    <div>
-                        <label className="text-xs text-gray-500 block mb-1">Title</label>
-                        <input 
-                            className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white outline-none focus:border-blue-500"
-                            value={editingTask.title}
-                            onChange={(e) => setEditingTask({...editingTask, title: e.target.value})}
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                         <div>
-                            <label className="text-xs text-gray-500 block mb-1">Schedule Date</label>
-                            <input 
-                                type="date"
-                                className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-xs"
-                                value={editingTask.date || ''}
-                                onChange={(e) => setEditingTask({...editingTask, date: e.target.value})}
-                            />
-                         </div>
-                         <div>
-                            <label className="text-xs text-gray-500 block mb-1">Schedule Time</label>
-                            <input 
-                                type="time"
-                                className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-xs"
-                                value={editingTask.time || ''}
-                                onChange={(e) => setEditingTask({...editingTask, time: e.target.value})}
-                            />
-                         </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                             <label className="text-xs text-red-400 mb-1 font-semibold flex items-center gap-1"><Flag size={10} /> Deadline</label>
-                             <input 
-                                 type="date"
-                                 className="w-full bg-gray-900 border border-red-900/30 rounded px-3 py-2 text-white text-xs"
-                                 value={editingTask.deadline || ''}
-                                 onChange={(e) => setEditingTask({...editingTask, deadline: e.target.value})}
-                             />
-                        </div>
-                        <div>
-                            <label className="text-xs text-red-400 block mb-1 font-semibold">Deadline Time</label>
-                            <input 
-                                type="time"
-                                className="w-full bg-gray-900 border border-red-900/30 rounded px-3 py-2 text-white text-xs"
-                                value={editingTask.deadlineTime || ''}
-                                onChange={(e) => setEditingTask({...editingTask, deadlineTime: e.target.value})}
-                            />
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <label className="text-xs text-gray-500 block mb-1">Duration (min)</label>
-                        <input 
-                            type="number"
-                            className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-xs"
-                            value={editingTask.durationMinutes}
-                            onChange={(e) => setEditingTask({...editingTask, durationMinutes: parseInt(e.target.value)})}
-                        />
-                    </div>
-
-                    <div>
-                        <label className="text-xs text-gray-500 block mb-1">Color</label>
-                        <div className="flex gap-2 flex-wrap">
-                            {TASK_COLORS.map(c => (
-                                <button
-                                    key={c}
-                                    type="button"
-                                    className={`w-6 h-6 rounded-full border-2 ${editingTask.color === c ? 'border-white scale-110' : 'border-transparent'}`}
-                                    style={{ backgroundColor: c }}
-                                    onClick={() => setEditingTask({...editingTask, color: c})}
-                                />
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                         <label className="text-xs text-gray-500 block mb-1">Priority</label>
-                         <select 
-                            className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-xs"
-                            value={editingTask.priority}
-                            onChange={(e) => setEditingTask({...editingTask, priority: e.target.value as Priority})}
-                         >
-                             {PRIORITIES.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
-                         </select>
-                    </div>
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                    <Button 
-                        variant="danger" 
-                        className="flex-1"
-                        onClick={() => {
-                            onDeleteTask(editingTask.id);
-                            setEditingTask(null);
-                        }}
-                    >
-                        <Trash2 size={16} /> Delete
-                    </Button>
-                    <Button 
-                        className="flex-auto"
-                        onClick={() => {
-                            onUpdateTask(editingTask);
-                            setEditingTask(null);
-                        }}
-                    >
-                        Save Changes
-                    </Button>
-                </div>
-             </div>
-        </div>
-    )
+      <TaskFormModal
+        title="Edit Task"
+        description="This uses the same duration and time controls as new tasks."
+        value={editingTaskForm}
+        onChange={setEditingTaskForm}
+        onClose={closeTaskEditor}
+        onSubmit={saveEditingTask}
+        submitLabel="Save Changes"
+        color={editingColor}
+        onColorChange={setEditingColor}
+        onDelete={deleteEditingTask}
+      />
+    );
   };
 
   // --- DAY DETAIL MODAL (Existing, for generic day click) ---
   const renderDayDetailModal = () => {
      if (!selectedDayDetails) return null;
-     const { dayTasks, dayExpenses, totalSpent, isOverBudget } = getDayStats(selectedDayDetails);
+     const { dayTasks, dayExpenses, totalSpent, isOverBudget, deadlines } = getDayStats(selectedDayDetails);
      
      return (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -653,15 +614,46 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <div className="space-y-4 border-l border-gray-600 ml-2 pl-6 relative">
                             {dayTasks.length === 0 && <div className="text-sm text-gray-600 italic">No tasks scheduled</div>}
                             {dayTasks.map(t => (
-                                <div key={t.id} className="relative group cursor-pointer" onClick={() => { setSelectedDayDetails(null); setEditingTask(t); }}>
+                                <div key={t.id} className="relative group cursor-pointer" onClick={() => { setSelectedDayDetails(null); openTaskEditor(t); }}>
                                     <div className="absolute -left-[29px] top-1 w-3 h-3 rounded-full border-2 border-dark-900" style={{ backgroundColor: t.color || '#3b82f6' }}></div>
                                     <div className="text-white font-medium text-sm group-hover:text-blue-400 transition-colors">{t.title}</div>
                                     <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
                                         <span>{t.time ? t.time : 'All Day'}</span>
                                         <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                                        <span>{t.durationMinutes}m</span>
+                                        <span>{formatDuration(t.durationMinutes)}</span>
                                     </div>
                                 </div>
+                            ))}
+                        </div>
+                     </div>
+
+                     {/* Divider */}
+                     <div className="h-px bg-gray-700 mx-6 my-2"></div>
+
+                     {/* Deadlines Section */}
+                     <div className="p-6 py-2">
+                        <h4 className="mb-4 flex items-center gap-2 text-sm font-bold text-gray-200">
+                            <Flag size={16} className="text-red-400" />
+                            Deadlines
+                        </h4>
+                        <div className="space-y-2">
+                            {deadlines.length === 0 && <div className="text-sm text-gray-600 italic">No deadlines due</div>}
+                            {deadlines.map((deadline) => (
+                                <button
+                                    key={deadline.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedDayDetails(null);
+                                        openTaskEditor(deadline);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-left text-sm text-red-100 hover:bg-red-500/20"
+                                >
+                                    <Flag size={14} className="shrink-0 text-red-400" fill="currentColor" />
+                                    <span className="min-w-0 flex-1 truncate">{deadline.title}</span>
+                                    {deadline.deadlineTime && (
+                                        <span className="rounded bg-red-900/40 px-2 py-0.5 text-xs">{deadline.deadlineTime}</span>
+                                    )}
+                                </button>
                             ))}
                         </div>
                      </div>

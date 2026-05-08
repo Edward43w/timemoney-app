@@ -21,6 +21,7 @@ import {
   updateExpenseCategories as firebaseUpdateExpenseCategories
 } from './firebaseService';
 import { onAuthChange, signOut } from './authService';
+import { getEndTimeFromDuration } from './taskFormUtils';
 
 // Mock Data Initializers
 const DEFAULT_BUDGET: Budget = { daily: 50, weekly: 300, monthly: 1200 };
@@ -157,7 +158,12 @@ const App: React.FC = () => {
   const handleScheduleTask = (taskId: string, date: string, time: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
-        handleUpdateTask({ ...task, date, time });
+        handleUpdateTask({
+          ...task,
+          date,
+          time: time || undefined,
+          endTime: time ? getEndTimeFromDuration(time, task.durationMinutes) : undefined,
+        });
     }
   };
 
