@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Task, Expense, Budget } from '../types';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Allocation, Task, Expense, Income } from '../types';
 import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange } from '../utils';
 import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, Flag, Trash2 } from 'lucide-react';
 import { DEFAULT_TASK_FORM, TaskFormState, formStateToTaskFields, formatDuration, taskToFormState } from '../taskFormUtils';
@@ -12,14 +12,17 @@ interface CalendarViewProps {
   onDateChange: (date: Date) => void;
   tasks: Task[];
   expenses: Expense[];
-  budget: Budget;
+  incomes: Income[];
+  allocations: Allocation[];
   expenseCategories: string[];
   onUpdateExpenseCategories: (categories: string[]) => void;
   onTaskSchedule: (taskId: string, date: string, time: string) => void;
   onUpdateTask: (task: Task) => void;
   onDeleteTask: (id: string) => void;
   onDeleteExpense: (id: string) => void;
+  onDeleteIncome: (id: string) => void;
   onAddExpense: (expense: Expense) => void;
+  onAddIncome: (income: Income) => void;
   onViewModeChange: (mode: 'day' | 'week' | 'month') => void;
 }
 
@@ -29,14 +32,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onDateChange,
   tasks,
   expenses,
-  budget,
+  incomes,
+  allocations,
   expenseCategories,
   onUpdateExpenseCategories,
   onTaskSchedule,
   onUpdateTask,
   onDeleteTask,
   onDeleteExpense,
+  onDeleteIncome,
   onAddExpense,
+  onAddIncome,
   onViewModeChange
 }) => {
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
@@ -44,20 +50,34 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [editingTaskForm, setEditingTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
   const [editingColor, setEditingColor] = useState('#3b82f6');
   const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food', date: formatDateISO(new Date()) });
+  const [newIncome, setNewIncome] = useState({ title: '', amount: 0, category: 'Income', date: formatDateISO(new Date()) });
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<string[]>(expenseCategories);
   const [newCategoryName, setNewCategoryName] = useState('');
 
+  const getMonthKeyForDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+  const getEnvelopeOptionsForDate = useCallback((date: Date) => {
+    const monthKey = getMonthKeyForDate(date);
+    const envelopeOptions = allocations
+      .filter((allocation) => allocation.month === monthKey)
+      .map((allocation) => allocation.category);
+
+    return envelopeOptions.length > 0 ? envelopeOptions : expenseCategories;
+  }, [allocations, expenseCategories]);
+
   useEffect(() => {
+    const options = getEnvelopeOptionsForDate(newExpense.date ? new Date(`${newExpense.date}T00:00:00`) : new Date());
     setCategoryDrafts(expenseCategories);
     setNewExpense((current) => ({
       ...current,
-      category: expenseCategories.includes(current.category) ? current.category : expenseCategories[0] || 'Other',
+      category: options.includes(current.category) ? current.category : options[0] || 'Other',
     }));
-  }, [expenseCategories]);
+  }, [getEnvelopeOptionsForDate, expenseCategories, newExpense.date]);
 
   const resetExpenseForm = (date = formatDateISO(new Date())) => {
-    setNewExpense({ title: '', amount: 0, category: expenseCategories[0] || 'Other', date });
+    const options = getEnvelopeOptionsForDate(new Date(`${date}T00:00:00`));
+    setNewExpense({ title: '', amount: 0, category: options[0] || 'Other', date });
   };
 
   const saveCategoryDrafts = () => {
@@ -204,10 +224,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const deadlines = tasks.filter(t => t.deadline === dateStr);
 
     const dayExpenses = expenses.filter(e => e.date === dateStr);
+    const dayIncomes = incomes.filter(i => i.date === dateStr);
     const totalSpent = dayExpenses.reduce((sum, e) => sum + e.amount, 0);
-    const isOverBudget = totalSpent > budget.daily;
+    const totalIncome = dayIncomes.reduce((sum, income) => sum + income.amount, 0);
+    const netCashFlow = totalIncome - totalSpent;
     
-    return { dayTasks, dayExpenses, totalSpent, isOverBudget, deadlines };
+    return { dayTasks, dayExpenses, dayIncomes, totalSpent, totalIncome, netCashFlow, deadlines };
   };
 
   // 計算周/月開銷統計
@@ -218,8 +240,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         const expenseDate = new Date(e.date);
         return expenseDate >= weekRange.start && expenseDate <= weekRange.end;
       });
+      const weekIncomes = incomes.filter(income => {
+        const incomeDate = new Date(income.date);
+        return incomeDate >= weekRange.start && incomeDate <= weekRange.end;
+      });
       const totalSpent = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
-      return { totalSpent, budget: budget.weekly, isOverBudget: totalSpent > budget.weekly, period: 'week' };
+      const totalIncome = weekIncomes.reduce((sum, income) => sum + income.amount, 0);
+      return { netCashFlow: totalIncome - totalSpent, period: 'week' };
     } else if (viewMode === 'month') {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
@@ -227,8 +254,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         const expenseDate = new Date(e.date);
         return expenseDate.getFullYear() === year && expenseDate.getMonth() === month;
       });
+      const monthIncomes = incomes.filter(income => {
+        const incomeDate = new Date(income.date);
+        return incomeDate.getFullYear() === year && incomeDate.getMonth() === month;
+      });
       const totalSpent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
-      return { totalSpent, budget: budget.monthly, isOverBudget: totalSpent > budget.monthly, period: 'month' };
+      const totalIncome = monthIncomes.reduce((sum, income) => sum + income.amount, 0);
+      return { netCashFlow: totalIncome - totalSpent, period: 'month' };
     }
     return null;
   };
@@ -247,7 +279,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     
     for(let d=1; d<=daysInMonth; d++) {
         const date = new Date(year, month, d);
-        const { dayTasks, totalSpent, isOverBudget, deadlines } = getDayStats(date);
+        const { dayTasks, totalSpent, totalIncome, netCashFlow, deadlines } = getDayStats(date);
         const isToday = isSameDay(date, new Date());
         const visibleTaskLimit = deadlines.length > 0 ? 2 : 3;
 
@@ -280,9 +312,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   {dayTasks.length > visibleTaskLimit && <div className="text-[8px] md:text-[9px] text-gray-500 pl-1">+{dayTasks.length - visibleTaskLimit} more</div>}
                </div>
 
-               {totalSpent > 0 && (
-                   <div className={`mt-0.5 md:mt-1 text-[9px] md:text-[10px] font-bold px-1 py-0.5 rounded flex items-center justify-end gap-1 ${isOverBudget ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
-                       <DollarSign size={8} /> {Math.round(totalSpent)}
+               {(totalSpent > 0 || totalIncome > 0) && (
+                   <div className={`mt-0.5 md:mt-1 text-[9px] md:text-[10px] font-bold px-1 py-0.5 rounded flex items-center justify-end gap-1 ${
+                    netCashFlow >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                   }`}>
+                       <DollarSign size={8} /> {netCashFlow >= 0 ? '+' : '-'}{Math.abs(Math.round(netCashFlow))}
                    </div>
                )}
             </div>
@@ -319,7 +353,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      <div className="grid grid-cols-7 text-center border-b border-gray-600 bg-gray-800/50 sticky top-0 z-10">
                          {weekDays.map((d, i) => {
                              const isToday = isSameDay(d, new Date());
-                             const { totalSpent, isOverBudget, deadlines } = getDayStats(d);
+                             const { totalSpent, totalIncome, netCashFlow, deadlines } = getDayStats(d);
                              return (
                                 <div key={i} className={`py-3 px-1 border-r border-gray-600 last:border-r-0 ${isToday ? 'bg-gray-700' : ''}`}>
                                      <div className="text-xs text-gray-500 uppercase flex items-center justify-center gap-1">
@@ -336,8 +370,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                      >
                                          {d.getDate()}
                                      </div>
-                                     <div className={`mt-1 text-xs font-mono font-medium ${totalSpent > 0 ? (isOverBudget ? 'text-red-400' : 'text-green-400') : 'text-gray-600'}`}>
-                                         {totalSpent > 0 ? `$${Math.round(totalSpent)}` : '-'}
+                                     <div className={`mt-1 text-xs font-mono font-medium ${
+                                      totalSpent > 0 || totalIncome > 0 ? (netCashFlow >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-600'
+                                     }`}>
+                                         {totalSpent > 0 || totalIncome > 0 ? `${netCashFlow >= 0 ? '+' : '-'}$${Math.abs(Math.round(netCashFlow))}` : '-'}
                                      </div>
                                 </div>
                              )
@@ -386,7 +422,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // --- DAY VIEW (Time Grid) ---
   const renderDay = () => {
-    const { dayTasks, dayExpenses, totalSpent, isOverBudget, deadlines } = getDayStats(currentDate);
+    const { dayTasks, dayExpenses, totalSpent, totalIncome, netCashFlow, deadlines } = getDayStats(currentDate);
     const hours = Array.from({length: 24}, (_, i) => i);
 
     return (
@@ -394,10 +430,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
              
              {/* Mobile: Compact Finance Header */}
              <div className="md:hidden flex items-center justify-between bg-gray-800/50 p-3 rounded-lg border border-gray-600 mb-2 shrink-0">
-                 <div className="text-xs text-gray-400">Daily Spending</div>
+                 <div className="text-xs text-gray-400">Daily Net</div>
                  <div className="flex items-center gap-2">
-                     <span className={`text-sm font-bold font-mono ${isOverBudget ? 'text-red-400' : 'text-green-400'}`}>
-                         {formatCurrency(totalSpent)}
+                     <span className={`text-sm font-bold font-mono ${netCashFlow >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                         {formatCurrency(netCashFlow)}
                      </span>
                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setSelectedDayDetails(currentDate)}>
                          <DollarSign size={14} />
@@ -518,10 +554,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                  </h3>
                  
                  <div className="text-center mb-6 bg-gray-900 rounded-lg p-4 border border-gray-600">
-                     <div className="text-gray-500 text-xs uppercase tracking-widest">Total Spent</div>
-                     <div className="text-3xl font-bold text-white mt-2 font-mono">{formatCurrency(totalSpent)}</div>
-                     <div className={`text-xs mt-2 inline-block px-2 py-0.5 rounded-full ${isOverBudget ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
-                         {isOverBudget ? `Over limit by ${formatCurrency(totalSpent - budget.daily)}` : 'Within Budget'}
+                     <div className="text-gray-500 text-xs uppercase tracking-widest">Net Cash Flow</div>
+                     <div className={`mt-2 font-mono text-3xl font-bold ${netCashFlow >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{formatCurrency(netCashFlow)}</div>
+                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded bg-emerald-500/10 px-2 py-1 text-emerald-300">+{formatCurrency(totalIncome)}</div>
+                        <div className="rounded bg-red-500/10 px-2 py-1 text-red-300">-{formatCurrency(totalSpent)}</div>
                      </div>
                  </div>
 
@@ -582,7 +619,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // --- DAY DETAIL MODAL (Existing, for generic day click) ---
   const renderDayDetailModal = () => {
      if (!selectedDayDetails) return null;
-     const { dayTasks, dayExpenses, totalSpent, isOverBudget, deadlines } = getDayStats(selectedDayDetails);
+     const { dayTasks, dayExpenses, dayIncomes, totalSpent, totalIncome, netCashFlow, deadlines } = getDayStats(selectedDayDetails);
+     const selectedDayEnvelopeOptions = getEnvelopeOptionsForDate(selectedDayDetails);
      
      return (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -661,6 +699,31 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      {/* Divider */}
                      <div className="h-px bg-gray-700 mx-6 my-2"></div>
 
+                     {/* Cash Flow Section */}
+                     <div className="px-6 py-2">
+                        <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-200">
+                            <DollarSign size={16} className="text-emerald-400" />
+                            Daily Cash Flow
+                        </h4>
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2">
+                                <div className="text-gray-400">Income</div>
+                                <div className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(totalIncome)}</div>
+                            </div>
+                            <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2">
+                                <div className="text-gray-400">Expense</div>
+                                <div className="mt-1 font-mono font-bold text-red-300">{formatCurrency(totalSpent)}</div>
+                            </div>
+                            <div className={`rounded-lg border p-2 ${netCashFlow >= 0 ? 'border-blue-500/20 bg-blue-500/10' : 'border-orange-500/20 bg-orange-500/10'}`}>
+                                <div className="text-gray-400">Net</div>
+                                <div className={`mt-1 font-mono font-bold ${netCashFlow >= 0 ? 'text-blue-300' : 'text-orange-300'}`}>{formatCurrency(netCashFlow)}</div>
+                            </div>
+                        </div>
+                     </div>
+
+                     {/* Divider */}
+                     <div className="h-px bg-gray-700 mx-6 my-2"></div>
+
                      {/* Expenses Section */}
                      <div className="p-6 pt-2">
                         <div className="flex items-center justify-between mb-4">
@@ -668,7 +731,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 <DollarSign size={16} className="text-green-500" />
                                 Expenses
                             </h4>
-                            <span className={`text-sm font-mono font-bold ${isOverBudget ? 'text-red-400' : 'text-gray-300'}`}>
+                            <span className={`text-sm font-mono font-bold ${totalSpent > 0 ? 'text-red-300' : 'text-gray-300'}`}>
                                 Total: {formatCurrency(totalSpent)}
                             </span>
                         </div>
@@ -702,6 +765,38 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 </div>
                             ))}
                         </div>
+
+                        <div className="mt-5 border-t border-gray-700 pt-4">
+                            <div className="mb-3 flex items-center justify-between">
+                                <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-300">Income</h5>
+                                <span className="text-xs font-mono text-emerald-300">{formatCurrency(totalIncome)}</span>
+                            </div>
+                            <div className="space-y-2">
+                                {dayIncomes.length === 0 && <div className="text-sm text-gray-600 italic">No income recorded</div>}
+                                {dayIncomes.map(income => (
+                                    <div key={income.id} className="flex items-center justify-between rounded border border-emerald-500/20 bg-emerald-500/10 p-2 text-sm">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-emerald-100">{income.title}</div>
+                                            <div className="text-xs text-emerald-300/70">{income.category}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-mono text-emerald-200">+{formatCurrency(income.amount)}</span>
+                                            <Button
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    onDeleteIncome(income.id);
+                                                }}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
+                                            >
+                                                <Trash2 size={14} />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                         
                         {/* Add Expense Form */}
                         <div className="mt-4 pt-3 border-t border-gray-600">
@@ -728,7 +823,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}
                                         className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
                                     >
-                                        {expenseCategories.map((category) => (
+                                        {selectedDayEnvelopeOptions.map((category) => (
                                           <option key={category} value={category}>{category}</option>
                                         ))}
                                     </select>
@@ -737,6 +832,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                             if (newExpense.title && newExpense.amount > 0) {
                                                 onAddExpense({
                                                     ...newExpense,
+                                                    category: selectedDayEnvelopeOptions.includes(newExpense.category) ? newExpense.category : selectedDayEnvelopeOptions[0] || 'Other',
                                                     date: formatDateISO(selectedDayDetails!),
                                                     id: Date.now().toString()
                                                 });
@@ -750,6 +846,44 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         Add
                                     </Button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 border-t border-gray-600 pt-3">
+                            <div className="space-y-3">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Income title"
+                                        value={newIncome.title}
+                                        onChange={(e) => setNewIncome({...newIncome, title: e.target.value})}
+                                        className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-emerald-500 focus:outline-none"
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Amount"
+                                        value={newIncome.amount || ''}
+                                        onChange={(e) => setNewIncome({...newIncome, amount: parseFloat(e.target.value) || 0})}
+                                        className="w-24 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-emerald-500 focus:outline-none"
+                                    />
+                                </div>
+                                <Button
+                                    onClick={() => {
+                                        if (newIncome.title && newIncome.amount > 0) {
+                                            onAddIncome({
+                                                ...newIncome,
+                                                date: formatDateISO(selectedDayDetails!),
+                                                id: Date.now().toString()
+                                            });
+                                            setNewIncome({ title: '', amount: 0, category: 'Income', date: formatDateISO(selectedDayDetails!) });
+                                        }
+                                    }}
+                                    size="sm"
+                                    className="w-full bg-emerald-600 hover:bg-emerald-500"
+                                    disabled={!newIncome.title || newIncome.amount <= 0}
+                                >
+                                    Add Income
+                                </Button>
                             </div>
                         </div>
                      </div>
@@ -777,6 +911,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // --- ADD EXPENSE MODAL ---
   const renderAddExpenseModal = () => {
     if (!showAddExpenseModal) return null;
+    const modalEnvelopeOptions = getEnvelopeOptionsForDate(newExpense.date ? new Date(`${newExpense.date}T00:00:00`) : new Date());
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -830,7 +965,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   value={newExpense.category}
                   onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
                 >
-                  {expenseCategories.map((category) => (
+                  {modalEnvelopeOptions.map((category) => (
                     <option key={category} value={category}>{category}</option>
                   ))}
                 </select>
@@ -907,6 +1042,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   if (newExpense.title && newExpense.amount > 0) {
                     onAddExpense({
                       ...newExpense,
+                      category: modalEnvelopeOptions.includes(newExpense.category) ? newExpense.category : modalEnvelopeOptions[0] || 'Other',
                       date: newExpense.date || formatDateISO(new Date()),
                       id: Date.now().toString()
                     });
@@ -939,12 +1075,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             if (!periodStats) return null;
             return (
               <div className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                periodStats.isOverBudget 
-                  ? 'bg-red-900/20 border border-red-500/30 text-red-400' 
-                  : 'bg-green-900/20 border border-green-500/30 text-green-400'
+                periodStats.netCashFlow < 0
+                  ? 'bg-red-900/20 border border-red-500/30 text-red-400'
+                  : 'bg-emerald-900/20 border border-emerald-500/30 text-emerald-400'
               }`}>
-                <span className="text-xs opacity-75">{periodStats.period === 'week' ? '週' : '月'}開銷: </span>
-                {formatCurrency(periodStats.totalSpent)} / {formatCurrency(periodStats.budget)}
+                <span className="text-xs opacity-75">{periodStats.period === 'week' ? '週' : '月'}淨額: </span>
+                {formatCurrency(periodStats.netCashFlow)}
               </div>
             );
           })()}

@@ -23,6 +23,21 @@ export interface Expense {
   date: string; // ISO Date string (YYYY-MM-DD)
 }
 
+export interface Income {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  date: string; // ISO Date string (YYYY-MM-DD)
+}
+
+export interface Allocation {
+  id: string;
+  category: string;
+  plannedAmount: number;
+  month: string; // YYYY-MM
+}
+
 export interface Budget {
   daily: number;
   weekly: number;
@@ -31,6 +46,17 @@ export interface Budget {
 
 export const DEFAULT_EXPENSE_CATEGORIES = [
   'Food', 'Transport', 'Shopping', 'Entertainment', 'Bills', 'Education', 'Health', 'Other'
+];
+
+export const DEFAULT_INCOME_CATEGORIES = ['Salary', 'Freelance', 'Allowance', 'Investment', 'Gift', 'Other'];
+
+export const DEFAULT_ALLOCATION_CATEGORIES = [
+  'Living',
+  'Fixed Costs',
+  'Learning',
+  'Entertainment',
+  'Savings',
+  'Emergency Fund',
 ];
 
 export const PRIORITIES: Priority[] = ['high', 'medium', 'low'];

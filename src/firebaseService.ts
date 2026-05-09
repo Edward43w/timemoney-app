@@ -4,6 +4,7 @@ import {
   updateDoc, 
   deleteDoc, 
   doc, 
+  deleteField,
   onSnapshot, 
   query, 
   orderBy, 
@@ -11,7 +12,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Task, Expense, Budget, DEFAULT_EXPENSE_CATEGORIES } from './types';
+import { Allocation, Task, Expense, Income, Budget, DEFAULT_EXPENSE_CATEGORIES } from './types';
 
 // 獲取當前用戶 ID
 const getCurrentUserId = (): string | null => {
@@ -56,8 +57,14 @@ export const addTask = async (task: Omit<Task, 'id'>) => {
 export const updateTask = async (taskId: string, updates: Partial<Task>) => {
   try {
     const taskRef = doc(db, getUserCollection('tasks'), taskId);
+    const cleanUpdates = Object.fromEntries(
+      Object.entries(updates)
+        .filter(([key]) => key !== 'id')
+        .map(([key, value]) => [key, value === undefined ? deleteField() : value])
+    );
+
     await updateDoc(taskRef, {
-      ...updates,
+      ...cleanUpdates,
       updatedAt: Timestamp.now()
     });
   } catch (error) {
@@ -151,6 +158,109 @@ export const subscribeToExpenses = (callback: (expenses: Expense[]) => void) => 
 // === 預算相關函數 ===
 
 // 更新預算
+export const addIncome = async (income: Omit<Income, 'id'>) => {
+  try {
+    const docRef = await addDoc(collection(db, getUserCollection('incomes')), {
+      ...income,
+      createdAt: Timestamp.now()
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error('Error adding income:', error);
+    throw error;
+  }
+};
+
+export const deleteIncome = async (incomeId: string) => {
+  try {
+    await deleteDoc(doc(db, getUserCollection('incomes'), incomeId));
+  } catch (error) {
+    console.error('Error deleting income:', error);
+    throw error;
+  }
+};
+
+export const subscribeToIncomes = (callback: (incomes: Income[]) => void) => {
+  try {
+    const q = query(collection(db, getUserCollection('incomes')), orderBy('date', 'desc'));
+
+    return onSnapshot(q, (querySnapshot) => {
+      const incomes: Income[] = [];
+      querySnapshot.forEach((doc) => {
+        incomes.push({
+          id: doc.id,
+          ...doc.data()
+        } as Income);
+      });
+      callback(incomes);
+    });
+  } catch (error) {
+    console.error('Error subscribing to incomes:', error);
+    callback([]);
+    return () => {};
+  }
+};
+
+export const addAllocation = async (allocation: Omit<Allocation, 'id'>) => {
+  try {
+    const docRef = await addDoc(collection(db, getUserCollection('allocations')), {
+      ...allocation,
+      createdAt: Timestamp.now()
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error('Error adding allocation:', error);
+    throw error;
+  }
+};
+
+export const updateAllocation = async (allocationId: string, updates: Partial<Allocation>) => {
+  try {
+    const allocationRef = doc(db, getUserCollection('allocations'), allocationId);
+    const cleanUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([key, value]) => key !== 'id' && value !== undefined)
+    );
+
+    await updateDoc(allocationRef, {
+      ...cleanUpdates,
+      updatedAt: Timestamp.now()
+    });
+  } catch (error) {
+    console.error('Error updating allocation:', error);
+    throw error;
+  }
+};
+
+export const deleteAllocation = async (allocationId: string) => {
+  try {
+    await deleteDoc(doc(db, getUserCollection('allocations'), allocationId));
+  } catch (error) {
+    console.error('Error deleting allocation:', error);
+    throw error;
+  }
+};
+
+export const subscribeToAllocations = (callback: (allocations: Allocation[]) => void) => {
+  try {
+    const q = query(collection(db, getUserCollection('allocations')), orderBy('month', 'desc'));
+
+    return onSnapshot(q, (querySnapshot) => {
+      const allocations: Allocation[] = [];
+      querySnapshot.forEach((doc) => {
+        allocations.push({
+          id: doc.id,
+          ...doc.data()
+        } as Allocation);
+      });
+      callback(allocations);
+    });
+  } catch (error) {
+    console.error('Error subscribing to allocations:', error);
+    callback([]);
+    return () => {};
+  }
+};
+
 export const updateBudget = async (budget: Budget) => {
   try {
     const budgetRef = doc(db, getUserCollection('budgets'), 'default');

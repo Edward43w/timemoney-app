@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Calendar as CalendarIcon, Wallet, ListTodo, Menu, X, LogOut } from 'lucide-react';
-import { Task, Expense, Budget, ViewMode, DEFAULT_EXPENSE_CATEGORIES } from './types';
+import { Allocation, Task, Expense, Income, ViewMode, DEFAULT_EXPENSE_CATEGORIES } from './types';
 import { CalendarView } from './components/CalendarView';
 import { TaskList } from './components/TaskList';
 import { FinanceDashboard } from './components/FinanceDashboard';
@@ -10,21 +10,23 @@ import { Button } from './components/Button';
 import { 
   subscribeToTasks, 
   subscribeToExpenses, 
-  subscribeToBudget,
+  subscribeToIncomes,
+  subscribeToAllocations,
   subscribeToExpenseCategories,
   addTask as firebaseAddTask,
   updateTask as firebaseUpdateTask,
   deleteTask as firebaseDeleteTask,
   addExpense as firebaseAddExpense,
   deleteExpense as firebaseDeleteExpense,
-  updateBudget as firebaseUpdateBudget,
+  addIncome as firebaseAddIncome,
+  deleteIncome as firebaseDeleteIncome,
+  addAllocation as firebaseAddAllocation,
+  updateAllocation as firebaseUpdateAllocation,
+  deleteAllocation as firebaseDeleteAllocation,
   updateExpenseCategories as firebaseUpdateExpenseCategories
 } from './firebaseService';
 import { onAuthChange, signOut } from './authService';
 import { getEndTimeFromDuration } from './taskFormUtils';
-
-// Mock Data Initializers
-const DEFAULT_BUDGET: Budget = { daily: 50, weekly: 300, monthly: 1200 };
 
 // App Version for Cache Busting
 const APP_VERSION = "2025.11.29-v3.0";
@@ -44,7 +46,8 @@ const App: React.FC = () => {
   // Firebase 即時資料
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [budget, setBudget] = useState<Budget>(DEFAULT_BUDGET);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<string[]>(DEFAULT_EXPENSE_CATEGORIES);
 
   // --- Authentication Effect ---
@@ -68,16 +71,18 @@ const App: React.FC = () => {
     
     // 監聽費用變化
     const unsubscribeExpenses = subscribeToExpenses(setExpenses);
+    const unsubscribeIncomes = subscribeToIncomes(setIncomes);
+    const unsubscribeAllocations = subscribeToAllocations(setAllocations);
     
     // 監聽預算變化
-    const unsubscribeBudget = subscribeToBudget(setBudget);
     const unsubscribeExpenseCategories = subscribeToExpenseCategories(setExpenseCategories);
 
     // 清理函數
     return () => {
       unsubscribeTasks();
       unsubscribeExpenses();
-      unsubscribeBudget();
+      unsubscribeIncomes();
+      unsubscribeAllocations();
       unsubscribeExpenseCategories();
     };
   }, [user]);
@@ -129,11 +134,47 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateBudget = async (newBudget: Budget) => {
+  const handleAddIncome = async (income: Income) => {
     try {
-      await firebaseUpdateBudget(newBudget);
+      const { id, ...incomeWithoutId } = income;
+      void id;
+      await firebaseAddIncome(incomeWithoutId);
     } catch (error) {
-      console.error('Failed to update budget:', error);
+      console.error('Failed to add income:', error);
+    }
+  };
+
+  const handleDeleteIncome = async (incomeId: string) => {
+    try {
+      await firebaseDeleteIncome(incomeId);
+    } catch (error) {
+      console.error('Failed to delete income:', error);
+    }
+  };
+
+  const handleAddAllocation = async (allocation: Allocation) => {
+    try {
+      const { id, ...allocationWithoutId } = allocation;
+      void id;
+      await firebaseAddAllocation(allocationWithoutId);
+    } catch (error) {
+      console.error('Failed to add allocation:', error);
+    }
+  };
+
+  const handleUpdateAllocation = async (allocation: Allocation) => {
+    try {
+      await firebaseUpdateAllocation(allocation.id, allocation);
+    } catch (error) {
+      console.error('Failed to update allocation:', error);
+    }
+  };
+
+  const handleDeleteAllocation = async (allocationId: string) => {
+    try {
+      await firebaseDeleteAllocation(allocationId);
+    } catch (error) {
+      console.error('Failed to delete allocation:', error);
     }
   };
 
@@ -274,23 +315,31 @@ const App: React.FC = () => {
                   onDateChange={setCurrentDate}
                   tasks={tasks}
                   expenses={expenses}
-                  budget={budget}
+                  incomes={incomes}
+                  allocations={allocations}
                   expenseCategories={expenseCategories}
                   onUpdateExpenseCategories={handleUpdateExpenseCategories}
                   onTaskSchedule={handleScheduleTask}
                   onUpdateTask={handleUpdateTask}
                   onDeleteTask={handleDeleteTask}
                   onDeleteExpense={handleDeleteExpense}
+                  onDeleteIncome={handleDeleteIncome}
                   onAddExpense={handleAddExpense}
+                  onAddIncome={handleAddIncome}
                   onViewModeChange={setViewMode}
                />
            ) : (
                <FinanceDashboard 
                   expenses={expenses}
+                  incomes={incomes}
+                  allocations={allocations}
                   onAddExpense={handleAddExpense}
                   onDeleteExpense={handleDeleteExpense}
-                  budget={budget}
-                  onUpdateBudget={handleUpdateBudget}
+                  onAddIncome={handleAddIncome}
+                  onDeleteIncome={handleDeleteIncome}
+                  onAddAllocation={handleAddAllocation}
+                  onUpdateAllocation={handleUpdateAllocation}
+                  onDeleteAllocation={handleDeleteAllocation}
                   expenseCategories={expenseCategories}
                   currentDate={currentDate}
                />
