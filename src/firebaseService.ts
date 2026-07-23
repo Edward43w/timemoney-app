@@ -12,7 +12,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Allocation, Task, Expense, Income, Budget, DEFAULT_EXPENSE_CATEGORIES } from './types';
+import { Allocation, Task, Expense, Income, Budget, DEFAULT_EXPENSE_CATEGORIES, PomodoroSession } from './types';
 
 // 獲取當前用戶 ID
 const getCurrentUserId = (): string | null => {
@@ -325,4 +325,33 @@ export const subscribeToExpenseCategories = (callback: (categories: string[]) =>
       callback(DEFAULT_EXPENSE_CATEGORIES);
     }
   });
+};
+
+export const addPomodoroSession = async (session: Omit<PomodoroSession, 'id'>) => {
+  const docRef = await addDoc(collection(db, getUserCollection('pomodoroSessions')), {
+    ...session,
+    createdAt: Timestamp.now(),
+  });
+  return docRef.id;
+};
+
+export const deletePomodoroSession = async (sessionId: string) => {
+  await deleteDoc(doc(db, getUserCollection('pomodoroSessions'), sessionId));
+};
+
+export const subscribeToPomodoroSessions = (callback: (sessions: PomodoroSession[]) => void) => {
+  try {
+    const q = query(collection(db, getUserCollection('pomodoroSessions')), orderBy('startTime', 'desc'));
+
+    return onSnapshot(q, (querySnapshot) => {
+      callback(querySnapshot.docs.map((sessionDoc) => ({
+        id: sessionDoc.id,
+        ...sessionDoc.data(),
+      } as PomodoroSession)));
+    });
+  } catch (error) {
+    console.error('Error subscribing to pomodoro sessions:', error);
+    callback([]);
+    return () => {};
+  }
 };

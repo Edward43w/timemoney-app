@@ -17,7 +17,7 @@ const root = ReactDOM.createRoot(document.getElementById('root')!)
 if (missingFirebaseEnv.length > 0) {
   root.render(
     <React.StrictMode>
-      <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center px-6">
+      <div className="flex min-h-dvh items-center justify-center bg-[#0b0d10] px-6 text-gray-100">
         <div className="max-w-xl w-full border border-gray-800 bg-gray-900 p-6 rounded-lg">
           <h1 className="text-2xl font-bold mb-3">Missing Firebase config</h1>
           <p className="text-gray-300 mb-4">

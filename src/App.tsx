@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { Calendar as CalendarIcon, Wallet, ListTodo, Menu, X, LogOut } from 'lucide-react';
-import { Allocation, Task, Expense, Income, ViewMode, DEFAULT_EXPENSE_CATEGORIES } from './types';
+import { Calendar as CalendarIcon, Clock3, Wallet, ListTodo, Menu, X, LogOut, Timer } from 'lucide-react';
+import { Allocation, Task, Expense, Income, ViewMode, DEFAULT_EXPENSE_CATEGORIES, PomodoroSession } from './types';
 import { CalendarView } from './components/CalendarView';
 import { TaskList } from './components/TaskList';
-import { FinanceDashboard } from './components/FinanceDashboard';
 import { LoginPage } from './components/LoginPage';
 import { Button } from './components/Button';
 import { 
@@ -13,6 +12,7 @@ import {
   subscribeToIncomes,
   subscribeToAllocations,
   subscribeToExpenseCategories,
+  subscribeToPomodoroSessions,
   addTask as firebaseAddTask,
   updateTask as firebaseUpdateTask,
   deleteTask as firebaseDeleteTask,
@@ -23,13 +23,36 @@ import {
   addAllocation as firebaseAddAllocation,
   updateAllocation as firebaseUpdateAllocation,
   deleteAllocation as firebaseDeleteAllocation,
-  updateExpenseCategories as firebaseUpdateExpenseCategories
+  updateExpenseCategories as firebaseUpdateExpenseCategories,
+  addPomodoroSession as firebaseAddPomodoroSession,
+  deletePomodoroSession as firebaseDeletePomodoroSession
 } from './firebaseService';
 import { onAuthChange, signOut } from './authService';
 import { getEndTimeFromDuration } from './taskFormUtils';
 
-// App Version for Cache Busting
-const APP_VERSION = "2025.11.29-v3.0";
+const FinanceDashboard = lazy(() => import('./components/FinanceDashboard').then((module) => ({
+  default: module.FinanceDashboard,
+})));
+
+const FocusDashboard = lazy(() => import('./components/FocusDashboard').then((module) => ({
+  default: module.FocusDashboard,
+})));
+
+const DashboardLoadingState = () => (
+  <div className="h-full overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101318] p-4 md:p-6" aria-label="正在載入頁面" aria-busy="true">
+    <div className="mb-5 h-16 animate-pulse rounded-xl bg-white/[0.05]" />
+    <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="h-24 animate-pulse rounded-xl bg-white/[0.04]" />
+      ))}
+    </div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="h-72 animate-pulse rounded-xl bg-white/[0.04]" />
+      <div className="h-72 animate-pulse rounded-xl bg-white/[0.04]" />
+    </div>
+    <span className="sr-only">正在載入功能頁面</span>
+  </div>
+);
 
 const App: React.FC = () => {
   // --- Authentication State ---
@@ -39,7 +62,7 @@ const App: React.FC = () => {
   // --- State ---
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [activeTab, setActiveTab] = useState<'calendar' | 'finance'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'finance' | 'focus'>('calendar');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // For desktop
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -49,6 +72,7 @@ const App: React.FC = () => {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<string[]>(DEFAULT_EXPENSE_CATEGORIES);
+  const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>([]);
 
   // --- Authentication Effect ---
   useEffect(() => {
@@ -76,6 +100,7 @@ const App: React.FC = () => {
     
     // 監聽預算變化
     const unsubscribeExpenseCategories = subscribeToExpenseCategories(setExpenseCategories);
+    const unsubscribePomodoroSessions = subscribeToPomodoroSessions(setPomodoroSessions);
 
     // 清理函數
     return () => {
@@ -84,6 +109,7 @@ const App: React.FC = () => {
       unsubscribeIncomes();
       unsubscribeAllocations();
       unsubscribeExpenseCategories();
+      unsubscribePomodoroSessions();
     };
   }, [user]);
 
@@ -186,6 +212,24 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddPomodoroSession = async (session: PomodoroSession) => {
+    try {
+      const { id, ...sessionWithoutId } = session;
+      void id;
+      await firebaseAddPomodoroSession(sessionWithoutId);
+    } catch (error) {
+      console.error('Failed to add pomodoro session:', error);
+    }
+  };
+
+  const handleDeletePomodoroSession = async (sessionId: string) => {
+    try {
+      await firebaseDeletePomodoroSession(sessionId);
+    } catch (error) {
+      console.error('Failed to delete pomodoro session:', error);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await signOut();
@@ -211,8 +255,25 @@ const App: React.FC = () => {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-white">載入中...</div>
+      <div className="flex min-h-dvh items-center justify-center bg-[#0b0d10] px-6" aria-live="polite" aria-busy="true">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="h-10 w-10 animate-pulse rounded-xl bg-white/[0.08]" />
+            <div className="space-y-2">
+              <div className="h-3 w-28 animate-pulse rounded bg-white/[0.08]" />
+              <div className="h-2 w-20 animate-pulse rounded bg-white/[0.05]" />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="h-20 animate-pulse rounded-xl bg-white/[0.05]" />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+              <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+              <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+            </div>
+          </div>
+          <span className="sr-only">正在載入 TimeMoney</span>
+        </div>
       </div>
     );
   }
@@ -223,10 +284,10 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="h-screen max-h-screen bg-gray-900 text-gray-200 font-sans flex overflow-hidden">
+    <div className="flex h-dvh min-h-dvh overflow-hidden bg-[#0b0d10] font-sans text-gray-200">
       
       {/* Sidebar (Desktop) */}
-      <aside className={`hidden md:flex flex-col border-r border-gray-700 bg-gray-800 transition-all duration-300 ${isSidebarOpen ? 'w-80' : 'w-16'}`}>
+      <aside className={`hidden shrink-0 flex-col overflow-hidden bg-[#101318] transition-[width,border-color] duration-300 md:flex ${isSidebarOpen ? 'w-80 border-r border-white/[0.08]' : 'w-0 border-r border-transparent'}`}>
         {isSidebarOpen && (
             <TaskList 
                 className="h-full border-none"
@@ -239,75 +300,77 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="min-w-0 flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main id="main-content" className="relative flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
         
         {/* Header */}
-        <header className="h-auto min-h-[64px] py-2 border-b border-gray-700 flex flex-wrap items-center justify-between px-4 bg-gray-900/80 backdrop-blur z-20 gap-2">
-          <div className="flex items-center gap-3">
+        <header className="z-20 grid min-h-16 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-white/[0.08] bg-[#0b0d10]/90 px-3 backdrop-blur-xl md:px-5">
+          <div className="flex min-w-0 items-center gap-2 md:gap-3">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="p-2 hover:bg-gray-700 rounded-lg text-gray-400 md:hidden"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-gray-100 md:hidden"
               aria-label="Open task list"
             >
                <Menu size={20} />
             </button>
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden md:block p-2 hover:bg-gray-700 rounded-lg text-gray-400"
+              className="hidden rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-gray-100 md:block"
               aria-label="Toggle task sidebar"
+              aria-pressed={isSidebarOpen}
             >
                <ListTodo size={20} />
             </button>
-            <h1 className="text-lg md:text-xl font-bold bg-gradient-to-r from-blue-500 to-green-500 bg-clip-text text-transparent truncate">
-              TimeMoney
-            </h1>
+            <div className="hidden items-center gap-2 sm:flex">
+              <div className="grid h-8 w-8 place-items-center rounded-lg border border-amber-300/25 bg-amber-300/10 text-amber-200">
+                <Clock3 size={16} strokeWidth={1.8} />
+              </div>
+              <div className="truncate text-sm font-semibold tracking-[-0.02em] text-gray-100 md:text-base">TimeMoney</div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-4 overflow-x-auto no-scrollbar max-w-full">
-            <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-600 shrink-0">
+          <nav className="justify-self-center" aria-label="主要功能">
+            <div className="flex shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.035] p-1">
               <button 
                   onClick={() => setActiveTab('calendar')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs md:text-sm transition-all ${activeTab === 'calendar' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                  className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all md:px-3 ${activeTab === 'calendar' ? 'bg-amber-300 text-gray-950 shadow-sm' : 'text-gray-500 hover:bg-white/[0.05] hover:text-gray-200'}`}
+                  aria-pressed={activeTab === 'calendar'}
               >
-                  <CalendarIcon size={14} className="md:w-4 md:h-4" /> <span className="hidden xs:inline">Schedule</span>
+                  <CalendarIcon size={14} className="md:h-4 md:w-4" /> <span>行事曆</span>
               </button>
               <button 
                   onClick={() => setActiveTab('finance')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs md:text-sm transition-all ${activeTab === 'finance' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                  className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all md:px-3 ${activeTab === 'finance' ? 'bg-amber-300 text-gray-950 shadow-sm' : 'text-gray-500 hover:bg-white/[0.05] hover:text-gray-200'}`}
+                  aria-pressed={activeTab === 'finance'}
               >
-                  <Wallet size={14} className="md:w-4 md:h-4" /> <span className="hidden xs:inline">Finance</span>
+                  <Wallet size={14} className="md:h-4 md:w-4" /> <span>財務</span>
+              </button>
+              <button
+                  onClick={() => setActiveTab('focus')}
+                  className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all md:px-3 ${activeTab === 'focus' ? 'bg-amber-300 text-gray-950 shadow-sm' : 'text-gray-500 hover:bg-white/[0.05] hover:text-gray-200'}`}
+                  aria-pressed={activeTab === 'focus'}
+              >
+                  <Timer size={14} className="md:h-4 md:w-4" /> <span>專注</span>
               </button>
             </div>
+          </nav>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex shrink-0 items-center justify-self-end gap-2">
               <span className="text-xs text-gray-400 hidden sm:block">{user.email}</span>
               <Button
                 onClick={handleLogout}
-                className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-xs"
+                variant="ghost"
+                size="sm"
+                className="h-9 px-2.5 text-xs"
+                aria-label="登出"
               >
                 <LogOut size={14} />
                 <span className="hidden sm:inline">登出</span>
               </Button>
             </div>
-
-            {activeTab === 'calendar' && (
-                <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-600 shrink-0">
-                    {(['day', 'week', 'month'] as ViewMode[]).map(m => (
-                        <button 
-                          key={m}
-                          onClick={() => setViewMode(m)}
-                          className={`px-2 md:px-3 py-1 text-[10px] md:text-xs uppercase font-bold rounded transition-colors ${viewMode === m ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-700'}`}
-                        >
-                            {m}
-                        </button>
-                    ))}
-                </div>
-            )}
-          </div>
         </header>
 
         {/* Scrollable Body */}
-        <div className="min-h-0 flex-1 overflow-hidden p-2 md:p-6 relative bg-gray-900">
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0d10] p-2 md:p-4">
            {activeTab === 'calendar' ? (
                <CalendarView 
                   viewMode={viewMode}
@@ -327,22 +390,36 @@ const App: React.FC = () => {
                   onAddExpense={handleAddExpense}
                   onAddIncome={handleAddIncome}
                   onViewModeChange={setViewMode}
+                  pomodoroSessions={pomodoroSessions}
+                  pomodoroStorageKey={`timemoney-pomodoro-${user.uid}`}
+                  onAddPomodoroSession={handleAddPomodoroSession}
+                  onDeletePomodoroSession={handleDeletePomodoroSession}
                />
            ) : (
-               <FinanceDashboard 
-                  expenses={expenses}
-                  incomes={incomes}
-                  allocations={allocations}
-                  onAddExpense={handleAddExpense}
-                  onDeleteExpense={handleDeleteExpense}
-                  onAddIncome={handleAddIncome}
-                  onDeleteIncome={handleDeleteIncome}
-                  onAddAllocation={handleAddAllocation}
-                  onUpdateAllocation={handleUpdateAllocation}
-                  onDeleteAllocation={handleDeleteAllocation}
-                  expenseCategories={expenseCategories}
-                  currentDate={currentDate}
-               />
+               <Suspense fallback={<DashboardLoadingState />}>
+                 {activeTab === 'finance' ? (
+                   <FinanceDashboard
+                      expenses={expenses}
+                      incomes={incomes}
+                      allocations={allocations}
+                      onAddExpense={handleAddExpense}
+                      onDeleteExpense={handleDeleteExpense}
+                      onAddIncome={handleAddIncome}
+                      onDeleteIncome={handleDeleteIncome}
+                      onAddAllocation={handleAddAllocation}
+                      onUpdateAllocation={handleUpdateAllocation}
+                      onDeleteAllocation={handleDeleteAllocation}
+                      expenseCategories={expenseCategories}
+                      currentDate={currentDate}
+                   />
+                 ) : (
+                   <FocusDashboard
+                      sessions={pomodoroSessions}
+                      currentDate={currentDate}
+                      onDateChange={setCurrentDate}
+                   />
+                 )}
+               </Suspense>
            )}
         </div>
 
@@ -350,12 +427,12 @@ const App: React.FC = () => {
 
       {/* Mobile Drawer (Task List) */}
       {isMobileMenuOpen && (
-          <div className="fixed inset-0 z-50 md:hidden">
-              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
-              <div className="absolute inset-y-0 left-0 w-[85%] max-w-xs bg-gray-800 shadow-2xl animate-slide-right flex flex-col">
-                  <div className="p-4 flex justify-between items-center border-b border-gray-600 shrink-0">
-                      <span className="font-bold text-lg text-white">My Tasks</span>
-                      <button onClick={() => setIsMobileMenuOpen(false)}><X className="text-gray-400" /></button>
+          <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="任務清單">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
+              <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-xs flex-col border-r border-white/[0.08] bg-[#101318] shadow-2xl animate-slide-right">
+                  <div className="flex shrink-0 items-center justify-between border-b border-white/[0.08] p-4">
+                      <span className="text-lg font-semibold tracking-[-0.02em] text-white">任務清單</span>
+                      <button className="rounded-lg p-2 text-gray-400 hover:bg-white/[0.06] hover:text-white" onClick={() => setIsMobileMenuOpen(false)} aria-label="關閉任務清單"><X size={18} /></button>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <TaskList 
@@ -369,11 +446,6 @@ const App: React.FC = () => {
               </div>
           </div>
       )}
-      
-      {/* Version Info for Cache Debugging */}
-      <div className="fixed bottom-2 right-2 text-xs text-gray-600 bg-gray-800/50 px-2 py-1 rounded opacity-30 hover:opacity-100 transition-opacity">
-        v{APP_VERSION}
-      </div>
     </div>
   );
 };

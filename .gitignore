@@ -124,6 +124,9 @@ Desktop.ini
 .directory
 *~
 
+# Local design reference skills
+.taste-skill/
+
 # JetBrains IDEs
 .idea/
 *.iws

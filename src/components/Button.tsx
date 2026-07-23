@@ -13,10 +13,10 @@ export const Button: React.FC<ButtonProps> = ({
   ...props 
 }) => {
   const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20',
-    secondary: 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500',
-    danger: 'bg-red-500 hover:bg-red-600 text-white',
-    ghost: 'hover:bg-gray-700 text-gray-400 hover:text-white',
+    primary: 'bg-amber-400 hover:bg-amber-300 text-gray-950 shadow-[0_8px_24px_rgba(214,167,86,0.14)]',
+    secondary: 'bg-gray-700 hover:bg-gray-600 text-gray-100 border border-white/10',
+    danger: 'bg-red-500/90 hover:bg-red-500 text-white',
+    ghost: 'hover:bg-white/[0.06] text-gray-400 hover:text-gray-100',
   };
 
   const sizes = {
@@ -28,7 +28,7 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <button
       className={cn(
-        'rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed',
+        'rounded-lg font-semibold transition-[color,background-color,border-color,box-shadow,transform] duration-200 flex items-center justify-center gap-2 active:translate-y-px disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0d10]',
         variants[variant],
         sizes[size],
         className

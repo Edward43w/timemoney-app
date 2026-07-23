@@ -2,6 +2,7 @@ import { Priority, Task } from './types';
 
 export interface TaskFormState {
   title: string;
+  isDaily: boolean;
   durationDays: number;
   durationHours: number;
   durationMinutes: number;
@@ -15,6 +16,7 @@ export interface TaskFormState {
 
 export const DEFAULT_TASK_FORM: TaskFormState = {
   title: '',
+  isDaily: false,
   durationDays: 0,
   durationHours: 0,
   durationMinutes: 30,
@@ -91,6 +93,7 @@ export const formatDuration = (minutes: number) => {
 
 export const taskToFormState = (task: Task): TaskFormState => ({
   title: task.title,
+  isDaily: task.isDaily || false,
   ...durationToParts(task.durationMinutes),
   priority: task.priority,
   date: task.date || '',
@@ -102,6 +105,7 @@ export const taskToFormState = (task: Task): TaskFormState => ({
 
 export const formStateToTaskFields = (form: TaskFormState) => ({
   title: form.title.trim(),
+  isDaily: form.isDaily,
   durationMinutes: Math.max(1, getDurationMinutes(form)),
   priority: form.priority,
   date: form.date || undefined,

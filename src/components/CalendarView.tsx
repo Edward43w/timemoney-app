@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Allocation, Task, Expense, Income } from '../types';
+import { Allocation, Task, Expense, Income, PomodoroSession } from '../types';
 import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange } from '../utils';
 import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, Flag, Trash2 } from 'lucide-react';
 import { DEFAULT_TASK_FORM, TaskFormState, formStateToTaskFields, formatDuration, taskToFormState } from '../taskFormUtils';
 import { Button } from './Button';
 import { TaskFormModal } from './TaskFormModal';
+import { PomodoroPanel } from './PomodoroPanel';
 
 interface CalendarViewProps {
   viewMode: 'day' | 'week' | 'month';
@@ -24,7 +25,13 @@ interface CalendarViewProps {
   onAddExpense: (expense: Expense) => void;
   onAddIncome: (income: Income) => void;
   onViewModeChange: (mode: 'day' | 'week' | 'month') => void;
+  pomodoroSessions: PomodoroSession[];
+  pomodoroStorageKey: string;
+  onAddPomodoroSession: (session: PomodoroSession) => void;
+  onDeletePomodoroSession: (id: string) => void;
 }
+
+const VIEW_LABELS = { day: '日', week: '週', month: '月' } as const;
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
   viewMode,
@@ -35,7 +42,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   incomes,
   allocations,
   expenseCategories,
-  onUpdateExpenseCategories,
   onTaskSchedule,
   onUpdateTask,
   onDeleteTask,
@@ -43,17 +49,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onDeleteIncome,
   onAddExpense,
   onAddIncome,
-  onViewModeChange
+  onViewModeChange,
+  pomodoroSessions,
+  pomodoroStorageKey,
+  onAddPomodoroSession,
+  onDeletePomodoroSession,
 }) => {
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingTaskForm, setEditingTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
   const [editingColor, setEditingColor] = useState('#3b82f6');
   const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food', date: formatDateISO(new Date()) });
-  const [newIncome, setNewIncome] = useState({ title: '', amount: 0, category: 'Income', date: formatDateISO(new Date()) });
+  const [newIncome, setNewIncome] = useState({ title: '', amount: 0, category: '', date: formatDateISO(new Date()) });
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
-  const [categoryDrafts, setCategoryDrafts] = useState<string[]>(expenseCategories);
-  const [newCategoryName, setNewCategoryName] = useState('');
 
   const getMonthKeyForDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
@@ -68,49 +76,40 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   useEffect(() => {
     const options = getEnvelopeOptionsForDate(newExpense.date ? new Date(`${newExpense.date}T00:00:00`) : new Date());
-    setCategoryDrafts(expenseCategories);
     setNewExpense((current) => ({
       ...current,
       category: options.includes(current.category) ? current.category : options[0] || 'Other',
     }));
-  }, [getEnvelopeOptionsForDate, expenseCategories, newExpense.date]);
+  }, [getEnvelopeOptionsForDate, newExpense.date]);
+
+  useEffect(() => {
+    if (!selectedDayDetails) return;
+    const date = formatDateISO(selectedDayDetails);
+    const options = getEnvelopeOptionsForDate(selectedDayDetails);
+    setNewIncome((current) => ({
+      ...current,
+      date,
+      category: options.includes(current.category) ? current.category : options[0] || 'Other',
+    }));
+  }, [getEnvelopeOptionsForDate, selectedDayDetails]);
+
+  useEffect(() => {
+    if (!selectedDayDetails && !showAddExpenseModal && !editingTask) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSelectedDayDetails(null);
+      setShowAddExpenseModal(false);
+      setEditingTask(null);
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [editingTask, selectedDayDetails, showAddExpenseModal]);
 
   const resetExpenseForm = (date = formatDateISO(new Date())) => {
     const options = getEnvelopeOptionsForDate(new Date(`${date}T00:00:00`));
     setNewExpense({ title: '', amount: 0, category: options[0] || 'Other', date });
-  };
-
-  const saveCategoryDrafts = () => {
-    const cleanCategories = categoryDrafts
-      .map((category) => category.trim())
-      .filter((category, index, source) => category && source.indexOf(category) === index);
-
-    if (cleanCategories.length === 0) return;
-
-    onUpdateExpenseCategories(cleanCategories);
-    setCategoryDrafts(cleanCategories);
-    setNewExpense((current) => ({
-      ...current,
-      category: cleanCategories.includes(current.category) ? current.category : cleanCategories[0],
-    }));
-  };
-
-  const addCategoryDraft = () => {
-    const nextCategory = newCategoryName.trim();
-    if (!nextCategory || categoryDrafts.includes(nextCategory)) return;
-
-    setCategoryDrafts([...categoryDrafts, nextCategory]);
-    setNewCategoryName('');
-  };
-
-  const removeCategoryDraft = (category: string) => {
-    if (categoryDrafts.length <= 1) return;
-    const nextCategories = categoryDrafts.filter((item) => item !== category);
-    setCategoryDrafts(nextCategories);
-    setNewExpense((current) => ({
-      ...current,
-      category: current.category === category ? nextCategories[0] : current.category,
-    }));
   };
 
   const openTaskEditor = (task: Task) => {
@@ -290,10 +289,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, date)}
               onClick={() => setSelectedDayDetails(date)}
-              className={`relative min-h-0 border border-gray-600 p-1 md:p-2 flex flex-col justify-between group hover:bg-gray-700/50 transition-colors cursor-pointer ${isToday ? 'bg-gray-700 ring-1 ring-blue-500' : 'bg-gray-800'}`}
+              className={`relative min-h-0 border border-white/[0.07] p-1 md:p-2 flex flex-col justify-between group hover:bg-white/[0.045] transition-colors cursor-pointer ${isToday ? 'bg-amber-300/[0.06] ring-1 ring-amber-300/50' : 'bg-[#111419]'}`}
             >
                <div className="flex justify-between items-start">
-                  <span className={`text-xs md:text-sm font-semibold w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>{d}</span>
+                  <span className={`text-xs md:text-sm font-semibold w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-amber-300 text-gray-950' : 'text-gray-400'}`}>{d}</span>
                </div>
 
                <div className="flex-1 mt-1 space-y-0.5 md:space-y-1 overflow-hidden">
@@ -365,7 +364,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                          )}
                                      </div>
                                      <div 
-                                        className={`text-lg font-bold w-8 h-8 mx-auto flex items-center justify-center rounded-full cursor-pointer hover:bg-gray-600 ${isToday ? 'bg-blue-600 text-white hover:bg-blue-500' : 'text-white'}`}
+                                        className={`text-lg font-bold w-8 h-8 mx-auto flex items-center justify-center rounded-full cursor-pointer hover:bg-white/[0.08] ${isToday ? 'bg-amber-300 text-gray-950 hover:bg-amber-200' : 'text-white'}`}
                                         onClick={() => setSelectedDayDetails(d)}
                                      >
                                          {d.getDate()}
@@ -423,6 +422,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // --- DAY VIEW (Time Grid) ---
   const renderDay = () => {
     const { dayTasks, dayExpenses, totalSpent, totalIncome, netCashFlow, deadlines } = getDayStats(currentDate);
+    const unscheduledDayTasks = dayTasks.filter((task) => !task.time);
+    const dayPomodoroSessions = pomodoroSessions.filter((session) => (
+      formatDateISO(new Date(session.startTime)) === formatDateISO(currentDate)
+    ));
     const hours = Array.from({length: 24}, (_, i) => i);
 
     return (
@@ -443,13 +446,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
              {/* Time Grid Area */}
              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar bg-gray-800/30 rounded-lg relative flex flex-col">
-                 {/* Unscheduled / Deadlines Bucket */}
-                 <div className="sticky top-0 z-40 bg-gray-800/95 backdrop-blur border-b border-gray-600 p-2 shadow-md shrink-0 flex flex-col gap-2">
+                 {(deadlines.length > 0 || unscheduledDayTasks.length > 0) && (
+                 <div className="sticky top-0 z-40 flex shrink-0 flex-col gap-2 border-b border-gray-600 bg-gray-800/95 p-2 shadow-md backdrop-blur">
                      {/* Deadlines Section */}
                      {deadlines.length > 0 && (
                          <div className="mb-1">
                              <div className="text-[10px] text-red-400 uppercase tracking-widest mb-1 flex items-center gap-1 font-bold">
-                                 <Flag size={10} fill="currentColor" /> Deadlines Due Today
+                                 <Flag size={10} fill="currentColor" /> 今日截止
                              </div>
                              <div className="flex flex-wrap gap-2">
                                  {deadlines.map(t => (
@@ -463,17 +466,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                          </div>
                      )}
 
+                     {unscheduledDayTasks.length > 0 && (
                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1 flex justify-between">
-                            <span>Unscheduled / All Day</span>
-                        </div>
                         <div 
                             className="flex flex-wrap gap-2 min-h-8"
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, currentDate)}
                         >
-                            {dayTasks.filter(t => !t.time).length === 0 && <span className="text-xs text-gray-600 italic px-2">No unscheduled tasks</span>}
-                            {dayTasks.filter(t => !t.time).map(t => (
+                            {unscheduledDayTasks.map(t => (
                                 <div 
                                     key={t.id} 
                                     className="px-2 py-1 rounded border border-white/10 text-xs flex items-center gap-2 text-white cursor-pointer hover:brightness-110"
@@ -485,7 +485,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             ))}
                         </div>
                      </div>
-                 </div>
+                     )}
+                  </div>
+                 )}
 
                  <div className="relative min-h-[1440px]"> {/* 24h * 60px height */}
                      {/* Hour Lines */}
@@ -534,6 +536,37 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                          );
                      })}
 
+                     {/* Actual focus blocks sit beside planned tasks for direct comparison. */}
+                     {dayPomodoroSessions.map((session) => {
+                         const start = new Date(session.startTime);
+                         const end = new Date(session.endTime);
+                         const dayStart = new Date(currentDate);
+                         dayStart.setHours(0, 0, 0, 0);
+                         const startMinutes = Math.max(0, (start.getTime() - dayStart.getTime()) / 60000);
+                         const endMinutes = Math.min(1440, (end.getTime() - dayStart.getTime()) / 60000);
+                         const wallClockMinutes = Math.max(1, endMinutes - startMinutes);
+
+                         return (
+                           <div
+                             key={session.id}
+                             className="pointer-events-none absolute right-2 left-[55%] z-20 overflow-hidden rounded-md border border-dashed border-amber-200/70 bg-[#17150d]/95 px-2 py-1 shadow-lg shadow-black/30"
+                             style={{
+                               top: `${startMinutes}px`,
+                               height: `${Math.max(wallClockMinutes, 24)}px`,
+                               borderLeftColor: session.taskColor,
+                               borderLeftWidth: 4,
+                             }}
+                           >
+                             <div className="truncate text-[11px] font-semibold text-amber-100">實際 · {session.taskTitle}</div>
+                             {wallClockMinutes >= 28 && (
+                               <div className="font-mono text-[9px] text-amber-200/65">
+                                 {start.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}–{end.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                               </div>
+                             )}
+                           </div>
+                         );
+                     })}
+
                      {/* Current Time Indicator */}
                      {isSameDay(currentDate, new Date()) && (
                          <div 
@@ -546,9 +579,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                  </div>
              </div>
 
-             {/* Daily Money Summary Side Panel (Desktop Only) */}
-             <div className="hidden md:block w-72 bg-gray-800 rounded-xl p-5 border border-gray-600 h-fit shadow-xl">
-                 <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 border-b border-gray-600 pb-2 flex items-center justify-between">
+             {/* Daily actuals rail (Desktop Only) */}
+             <div className="hidden w-80 shrink-0 flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar md:flex">
+              <section className="shrink-0 rounded-xl border border-white/[0.09] bg-[#151a21] p-4 shadow-xl">
+                  <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 border-b border-gray-600 pb-2 flex items-center justify-between">
                     Daily Finance
                     <span className="text-[10px] text-gray-500">{formatDateISO(currentDate)}</span>
                  </h3>
@@ -562,7 +596,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      </div>
                  </div>
 
-                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                 <div className="max-h-36 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
                      {dayExpenses.length === 0 && <div className="text-xs text-center text-gray-600 py-8 italic">No expenses recorded today</div>}
                      {dayExpenses.map(expense => (
                          <div key={expense.id} className="flex items-center justify-between text-sm group p-2 rounded hover:bg-gray-700 transition-colors">
@@ -591,6 +625,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                          </div>
                      ))}
                  </div>
+              </section>
+
+              <PomodoroPanel
+                date={currentDate}
+                tasks={tasks}
+                sessions={pomodoroSessions}
+                storageKey={pomodoroStorageKey}
+                onAddSession={onAddPomodoroSession}
+                onDeleteSession={onDeletePomodoroSession}
+              />
              </div>
         </div>
     );
@@ -624,21 +668,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
      
      return (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-             <div 
-                className="bg-gray-800 border border-gray-600 w-full max-w-sm md:max-w-md rounded-3xl overflow-hidden shadow-2xl scale-100 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
-                onClick={(e) => e.stopPropagation()}
-             >
+              <div
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="day-detail-title"
+                 className="flex max-h-[90dvh] w-full max-w-sm scale-100 animate-in flex-col overflow-hidden rounded-2xl border border-white/[0.09] bg-[#12161b] shadow-2xl zoom-in-95 duration-200 md:max-w-md"
+                 onClick={(e) => e.stopPropagation()}
+              >
                  {/* Header */}
-                 <div className="p-6 bg-gradient-to-br from-gray-700 to-gray-800 border-b border-gray-600 relative shrink-0">
-                     <button 
+                  <div className="relative shrink-0 border-b border-white/[0.08] bg-[#15191f] p-6">
+                      <button
                         onClick={() => setSelectedDayDetails(null)} 
                         className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+                        aria-label="關閉日期詳情"
                      >
                          <X size={20} />
                      </button>
-                     <div className="text-3xl font-bold text-white mb-1">{selectedDayDetails.getDate()}</div>
-                     <div className="text-gray-400 font-medium uppercase tracking-wider text-sm">
-                         {selectedDayDetails.toLocaleDateString('en-US', { weekday: 'long', month: 'long' })}
+                      <div id="day-detail-title" className="mb-1 text-3xl font-semibold tracking-[-0.04em] text-white">{selectedDayDetails.getDate()}</div>
+                      <div className="text-gray-400 font-medium uppercase tracking-wider text-sm">
+                          {selectedDayDetails.toLocaleDateString('zh-TW', { weekday: 'long', month: 'long' })}
                      </div>
                  </div>
 
@@ -653,7 +701,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             {dayTasks.length === 0 && <div className="text-sm text-gray-600 italic">No tasks scheduled</div>}
                             {dayTasks.map(t => (
                                 <div key={t.id} className="relative group cursor-pointer" onClick={() => { setSelectedDayDetails(null); openTaskEditor(t); }}>
-                                    <div className="absolute -left-[29px] top-1 w-3 h-3 rounded-full border-2 border-dark-900" style={{ backgroundColor: t.color || '#3b82f6' }}></div>
+                                    <div className="absolute -left-[29px] top-1 w-3 h-3 rounded-full border-2 border-[#0b0d10]" style={{ backgroundColor: t.color || '#3b82f6' }}></div>
                                     <div className="text-white font-medium text-sm group-hover:text-blue-400 transition-colors">{t.title}</div>
                                     <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
                                         <span>{t.time ? t.time : 'All Day'}</span>
@@ -801,7 +849,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {/* Add Expense Form */}
                         <div className="mt-4 pt-3 border-t border-gray-600">
                             <div className="space-y-3">
-                                <div className="flex gap-2">
+                                 <div className="flex gap-2">
                                     <input
                                         type="text"
                                         placeholder="Expense title"
@@ -865,17 +913,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                         value={newIncome.amount || ''}
                                         onChange={(e) => setNewIncome({...newIncome, amount: parseFloat(e.target.value) || 0})}
                                         className="w-24 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-emerald-500 focus:outline-none"
-                                    />
-                                </div>
-                                <Button
+                                     />
+                                 </div>
+                                 <select
+                                     value={newIncome.category}
+                                     onChange={(e) => setNewIncome({ ...newIncome, category: e.target.value })}
+                                     className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                     aria-label="收入分類"
+                                 >
+                                     {selectedDayEnvelopeOptions.map((category) => (
+                                         <option key={category} value={category}>{category}</option>
+                                     ))}
+                                 </select>
+                                 <Button
                                     onClick={() => {
                                         if (newIncome.title && newIncome.amount > 0) {
-                                            onAddIncome({
-                                                ...newIncome,
-                                                date: formatDateISO(selectedDayDetails!),
-                                                id: Date.now().toString()
-                                            });
-                                            setNewIncome({ title: '', amount: 0, category: 'Income', date: formatDateISO(selectedDayDetails!) });
+                                             onAddIncome({
+                                                 ...newIncome,
+                                                 category: selectedDayEnvelopeOptions.includes(newIncome.category) ? newIncome.category : selectedDayEnvelopeOptions[0] || 'Other',
+                                                 date: formatDateISO(selectedDayDetails!),
+                                                 id: Date.now().toString()
+                                             });
+                                             setNewIncome({ title: '', amount: 0, category: selectedDayEnvelopeOptions[0] || 'Other', date: formatDateISO(selectedDayDetails!) });
                                         }
                                     }}
                                     size="sm"
@@ -915,28 +974,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div className="bg-gray-800 border border-gray-600 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-labelledby="expense-modal-title" className="w-full max-w-md rounded-2xl border border-white/[0.09] bg-[#12161b] p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-semibold text-white">Log Expense</h3>
-            <button onClick={() => setShowAddExpenseModal(false)} className="text-gray-400 hover:text-white">
+            <h3 id="expense-modal-title" className="text-xl font-semibold text-white">新增支出</h3>
+            <button onClick={() => setShowAddExpenseModal(false)} className="text-gray-400 hover:text-white" aria-label="關閉新增支出">
               <X size={20} />
             </button>
           </div>
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">名稱</label>
               <input
                 type="text"
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
-                placeholder="Enter expense description"
+                placeholder="例如：午餐"
                 value={newExpense.title}
                 onChange={(e) => setNewExpense({ ...newExpense, title: e.target.value })}
               />
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">日期</label>
               <input
                 type="date"
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
@@ -947,7 +1006,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Amount</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">金額</label>
                 <input
                   type="number"
                   step="0.01"
@@ -959,7 +1018,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">分類</label>
                 <select
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                   value={newExpense.category}
@@ -971,63 +1030,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </select>
               </div>
             </div>
-
-            <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-3">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-200">Categories</h4>
-                  <p className="text-xs text-gray-500">Edit, add, or remove options for future expenses.</p>
-                </div>
-                <Button size="sm" variant="secondary" onClick={saveCategoryDrafts}>
-                  Save
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {categoryDrafts.map((category, index) => (
-                  <div key={`${category}-${index}`} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                      value={category}
-                      onChange={(event) => {
-                        const nextDrafts = [...categoryDrafts];
-                        nextDrafts[index] = event.target.value;
-                        setCategoryDrafts(nextDrafts);
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeCategoryDraft(category)}
-                      disabled={categoryDrafts.length <= 1}
-                      className="px-2 text-red-300 hover:text-red-200"
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <input
-                  type="text"
-                  className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-blue-500"
-                  placeholder="New category"
-                  value={newCategoryName}
-                  onChange={(event) => setNewCategoryName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      addCategoryDraft();
-                    }
-                  }}
-                />
-                <Button size="sm" type="button" onClick={addCategoryDraft}>
-                  Add
-                </Button>
-              </div>
-            </div>
+            <p className="text-xs text-gray-500">分類同步自該月份的預算分配。</p>
             
             <div className="flex gap-3 mt-6">
               <Button 
@@ -1035,7 +1038,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 onClick={() => setShowAddExpenseModal(false)}
                 className="flex-1"
               >
-                Cancel
+                取消
               </Button>
               <Button 
                 onClick={() => {
@@ -1053,7 +1056,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 disabled={!newExpense.title || newExpense.amount <= 0 || !newExpense.date}
                 className="flex-1"
               >
-                Add Expense
+                新增支出
               </Button>
             </div>
           </div>
@@ -1063,11 +1066,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-gray-900 rounded-lg md:rounded-2xl border border-gray-600 overflow-hidden shadow-2xl relative">
-      <div className="flex items-center justify-between mb-0 px-3 py-3 md:px-4 md:pt-4 md:pb-2 border-b border-gray-600 bg-gray-800/50 shrink-0">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg md:text-2xl font-bold text-white tracking-tight">
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#101318] shadow-[0_20px_60px_rgba(0,0,0,0.22)] md:rounded-2xl">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] bg-[#12161b] px-3 py-3 md:px-4">
+        <div className="flex min-w-0 items-center gap-3 md:gap-4">
+          <h2 className="truncate text-lg font-semibold tracking-[-0.025em] text-white md:text-2xl">
+              {currentDate.toLocaleDateString('zh-TW', viewMode === 'day'
+                ? { year: 'numeric', month: 'long', day: 'numeric' }
+                : { month: 'long', year: 'numeric' })}
           </h2>
           {/* 開銷統計顯示 */}
           {(viewMode === 'week' || viewMode === 'month') && (() => {
@@ -1086,10 +1091,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           })()}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-600">
-             <Button variant="ghost" onClick={handlePrev} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronLeft size={16}/></Button>
-             <Button variant="ghost" onClick={() => onDateChange(new Date())} size="sm" className="h-7 md:h-8 text-xs px-2">Today</Button>
-             <Button variant="ghost" onClick={handleNext} size="sm" className="h-7 w-7 md:h-8 md:w-8 p-0"><ChevronRight size={16}/></Button>
+          <div className="flex items-center rounded-lg border border-white/[0.08] bg-[#0b0d10] p-1" aria-label="行事曆檢視">
+            {(['day', 'week', 'month'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onViewModeChange(mode)}
+                className={`rounded-md px-2 py-1 text-xs font-semibold transition-colors md:px-2.5 ${viewMode === mode ? 'bg-amber-300 text-gray-950' : 'text-gray-500 hover:bg-white/[0.06] hover:text-gray-200'}`}
+                aria-pressed={viewMode === mode}
+              >
+                {VIEW_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-[#0b0d10] p-1">
+             <Button variant="ghost" onClick={handlePrev} size="sm" className="h-7 w-7 p-0 md:h-8 md:w-8" aria-label="上一個期間"><ChevronLeft size={16}/></Button>
+             <Button variant="ghost" onClick={() => onDateChange(new Date())} size="sm" className="h-7 px-2 text-xs md:h-8">今天</Button>
+             <Button variant="ghost" onClick={handleNext} size="sm" className="h-7 w-7 p-0 md:h-8 md:w-8" aria-label="下一個期間"><ChevronRight size={16}/></Button>
           </div>
         </div>
       </div>

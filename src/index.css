@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+@theme {
+  --breakpoint-xs: 30rem;
+  --font-sans: "Avenir Next", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
 html,
 body,
 #root {
@@ -10,8 +22,34 @@ body,
 }
 
 body {
-  background-color: #09090b;
-  color: #e4e4e7;
+  background-color: #0b0d10;
+  background-image:
+    radial-gradient(circle at 12% -10%, rgb(214 167 86 / 8%), transparent 28rem),
+    linear-gradient(180deg, #0b0d10 0%, #0d1014 100%);
+  color: #e7e9ec;
+  font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid #d6a756;
+  outline-offset: 3px;
+}
+
+::selection {
+  background: rgb(214 167 86 / 28%);
+  color: #fff7e6;
 }
 
 ::-webkit-scrollbar {
@@ -30,4 +68,15 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #52525b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

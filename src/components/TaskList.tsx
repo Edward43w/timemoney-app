@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Task, Priority } from '../types';
-import { getRandomColor } from '../utils';
+import { formatDateISO, getRandomColor } from '../utils';
 import {
   DEFAULT_TASK_FORM,
   TaskFormState,
@@ -16,6 +16,7 @@ import {
   Flag,
   GripVertical,
   Plus,
+  Repeat2,
   Square,
   Trash2,
 } from 'lucide-react';
@@ -29,20 +30,21 @@ interface TaskListProps {
   className?: string;
 }
 
-type TaskFilter = 'all' | 'scheduled' | 'unscheduled' | 'done';
+type TaskFilter = 'all' | 'daily' | 'scheduled' | 'unscheduled' | 'done';
 type TaskSort = 'priority' | 'duration' | 'default';
 
 const FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [
-  { value: 'all', label: 'Active' },
-  { value: 'scheduled', label: 'Scheduled' },
-  { value: 'unscheduled', label: 'Unscheduled' },
-  { value: 'done', label: 'Done' },
+  { value: 'all', label: '進行中' },
+  { value: 'daily', label: '每日' },
+  { value: 'scheduled', label: '已排程' },
+  { value: 'unscheduled', label: '未排程' },
+  { value: 'done', label: '已完成' },
 ];
 
 const SORT_OPTIONS: { value: TaskSort; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'priority', label: 'Priority' },
-  { value: 'duration', label: 'Duration' },
+  { value: 'default', label: '預設' },
+  { value: 'priority', label: '優先度' },
+  { value: 'duration', label: '所需時間' },
 ];
 
 const priorityScore: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
@@ -61,19 +63,31 @@ export const TaskList: React.FC<TaskListProps> = ({
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingTaskForm, setEditingTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
   const [editingColor, setEditingColor] = useState('#3b82f6');
+  const [today, setToday] = useState(() => formatDateISO(new Date()));
+  const isTaskDone = (task: Task) => task.isDaily ? task.dailyCompletedOn === today : task.isCompleted;
+
+  useEffect(() => {
+    const now = new Date();
+    const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const timer = window.setTimeout(() => setToday(formatDateISO(new Date())), nextDay.getTime() - now.getTime() + 1000);
+    return () => window.clearTimeout(timer);
+  }, [today]);
 
   const counts = useMemo(() => {
     return {
-      all: tasks.filter((task) => !task.isCompleted).length,
-      scheduled: tasks.filter((task) => !task.isCompleted && !!task.date).length,
-      unscheduled: tasks.filter((task) => !task.isCompleted && !task.date).length,
-      done: tasks.filter((task) => task.isCompleted).length,
+      all: tasks.filter((task) => !task.isDaily && !task.isCompleted).length,
+      daily: tasks.filter((task) => task.isDaily).length,
+      scheduled: tasks.filter((task) => !task.isDaily && !task.isCompleted && !!task.date).length,
+      unscheduled: tasks.filter((task) => !task.isDaily && !task.isCompleted && !task.date).length,
+      done: tasks.filter((task) => !task.isDaily && task.isCompleted).length,
     };
   }, [tasks]);
 
   const sortedTasks = useMemo(() => {
     return [...tasks]
       .filter((task) => {
+        if (filter === 'daily') return !!task.isDaily;
+        if (task.isDaily) return false;
         if (filter === 'done') return task.isCompleted;
         if (task.isCompleted) return false;
         if (filter === 'scheduled') return !!task.date;
@@ -129,6 +143,15 @@ export const TaskList: React.FC<TaskListProps> = ({
   };
 
   const toggleComplete = (task: Task) => {
+    if (task.isDaily) {
+      onUpdateTask({
+        ...task,
+        isCompleted: false,
+        dailyCompletedOn: task.dailyCompletedOn === today ? undefined : today,
+      });
+      return;
+    }
+
     onUpdateTask({ ...task, isCompleted: !task.isCompleted });
   };
 
@@ -146,11 +169,11 @@ export const TaskList: React.FC<TaskListProps> = ({
   };
 
   return (
-    <div className={`relative flex h-full min-h-0 flex-col border-l border-gray-700 bg-gray-800 ${className}`}>
-      <div className="shrink-0 border-b border-gray-700 p-4">
-        <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-white">
-          <CheckSquare className="text-blue-500" />
-          To-Do List
+    <div className={`relative flex h-full min-h-0 flex-col bg-[#101318] ${className}`}>
+      <div className="shrink-0 border-b border-white/[0.08] p-4">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold tracking-[-0.02em] text-white">
+          <CheckSquare className="text-amber-200" strokeWidth={1.8} />
+          任務
         </h2>
 
         <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
@@ -158,8 +181,8 @@ export const TaskList: React.FC<TaskListProps> = ({
             <button
               key={option.value}
               onClick={() => setFilter(option.value)}
-              className={`flex min-w-0 items-center justify-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${
-                filter === option.value ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-gray-200'
+              className={`flex min-w-0 items-center justify-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${option.value === 'done' ? 'col-span-2' : ''} ${
+                filter === option.value ? 'bg-amber-300 text-gray-950' : 'bg-white/[0.035] text-gray-500 hover:bg-white/[0.06] hover:text-gray-200'
               }`}
             >
               <span className="truncate">{option.label}</span>
@@ -170,11 +193,12 @@ export const TaskList: React.FC<TaskListProps> = ({
 
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <ArrowUpDown size={12} />
-          <span>Sort</span>
+          <span>排序</span>
           <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as TaskSort)}
-            className="min-w-0 flex-1 rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-white outline-none focus:border-blue-500"
+            aria-label="任務排序方式"
+            className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-amber-300/60"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -187,17 +211,21 @@ export const TaskList: React.FC<TaskListProps> = ({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-20">
         <div className="space-y-3">
-          {sortedTasks.map((task) => (
+          {sortedTasks.map((task) => {
+            const taskDone = isTaskDone(task);
+            return (
             <div
               key={task.id}
-              draggable={!task.isCompleted}
+              draggable={!taskDone && !task.isDaily}
               onDragStart={(event) => handleDragStart(event, task)}
               onDragEnd={handleDragEnd}
               onClick={() => openEditTask(task)}
               className={`group relative flex gap-3 rounded-lg border p-3 transition-all ${
-                task.isCompleted
-                  ? 'cursor-pointer border-gray-700 bg-gray-900/60 text-gray-500 hover:border-gray-600'
-                  : 'cursor-grab border-gray-700 bg-gray-900 hover:border-blue-500/50 active:cursor-grabbing'
+                taskDone
+                  ? 'cursor-pointer border-white/[0.06] bg-white/[0.02] text-gray-500 hover:border-white/[0.12]'
+                  : task.isDaily
+                    ? 'cursor-pointer border-white/[0.07] bg-[#0c0f13] hover:border-amber-300/30'
+                    : 'cursor-grab border-white/[0.07] bg-[#0c0f13] hover:border-amber-300/30 active:cursor-grabbing'
               }`}
             >
               <div
@@ -205,7 +233,7 @@ export const TaskList: React.FC<TaskListProps> = ({
                 style={{ backgroundColor: task.color || '#3b82f6' }}
               />
 
-              {!task.isCompleted && (
+              {!taskDone && !task.isDaily && (
                 <div className="absolute left-2 top-1/2 z-10 -translate-y-1/2 cursor-grab text-gray-600 opacity-0 group-hover:opacity-100">
                   <GripVertical size={14} />
                 </div>
@@ -217,16 +245,21 @@ export const TaskList: React.FC<TaskListProps> = ({
                   toggleComplete(task);
                 }}
                 className="ml-2 mt-1 shrink-0 pl-1 text-gray-500 hover:text-blue-500"
-                aria-label={task.isCompleted ? 'Mark as active' : 'Mark as done'}
+                aria-label={taskDone ? '標示為今天未完成' : '標示為完成'}
               >
-                {task.isCompleted ? <CheckSquare size={18} /> : <Square size={18} />}
+                {taskDone ? <CheckSquare size={18} /> : <Square size={18} />}
               </button>
 
               <div className="min-w-0 flex-1">
-                <div className={`truncate font-medium ${task.isCompleted ? 'line-through' : 'text-gray-200'}`}>
+                <div className={`truncate font-medium ${taskDone ? 'line-through text-gray-500' : 'text-gray-200'}`}>
                   {task.title}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                  {task.isDaily && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-200/80">
+                      <Repeat2 size={10} /> 每日
+                    </span>
+                  )}
                   <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{task.priority}</span>
                   <span className="flex items-center gap-1">
                     <Clock size={10} /> {formatDuration(task.durationMinutes)}
@@ -260,17 +293,18 @@ export const TaskList: React.FC<TaskListProps> = ({
                   event.stopPropagation();
                   onDeleteTask(task.id);
                 }}
-                className="self-start text-gray-600 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                className="self-start text-gray-600 opacity-100 transition-opacity hover:text-red-400 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                 aria-label="Delete task"
               >
                 <Trash2 size={16} />
               </button>
             </div>
-          ))}
+            );
+          })}
 
           {sortedTasks.length === 0 && (
             <div className="rounded-lg border border-dashed border-gray-700 p-6 text-center text-sm text-gray-500">
-              {filter === 'done' ? 'No completed tasks.' : 'No active tasks here.'}
+              {filter === 'done' ? '還沒有已完成的任務。' : filter === 'daily' ? '還沒有每日任務，可以從新增任務開啟每日選項。' : '這裡還沒有任務，先新增一件今天想完成的事。'}
             </div>
           )}
         </div>
@@ -279,7 +313,7 @@ export const TaskList: React.FC<TaskListProps> = ({
       <button
         type="button"
         onClick={() => setShowAddTaskModal(true)}
-        className="absolute bottom-4 right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl shadow-blue-950/50 transition-colors hover:bg-blue-500"
+        className="absolute bottom-4 right-4 z-20 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-300 text-gray-950 shadow-[0_12px_30px_rgba(214,167,86,0.18)] transition-colors hover:bg-amber-200"
         aria-label="Add task"
       >
         <Plus size={24} />
@@ -287,25 +321,25 @@ export const TaskList: React.FC<TaskListProps> = ({
 
       {showAddTaskModal && (
         <TaskFormModal
-          title="New Task"
-          description="Set duration first, then schedule when needed."
+          title="新增任務"
+          description="先設定需要的時間，需要時再放進行事曆。"
           value={newTask}
           onChange={setNewTask}
           onClose={() => setShowAddTaskModal(false)}
           onSubmit={handleAddTask}
-          submitLabel="Add Task"
+          submitLabel="新增任務"
         />
       )}
 
       {editingTask && (
         <TaskFormModal
-          title="Edit Task"
-          description="This uses the same duration and time controls as new tasks."
+          title="編輯任務"
+          description="調整任務時間、排程與截止期限。"
           value={editingTaskForm}
           onChange={setEditingTaskForm}
           onClose={() => setEditingTask(null)}
           onSubmit={handleUpdateTask}
-          submitLabel="Save Changes"
+          submitLabel="儲存變更"
           color={editingColor}
           onColorChange={setEditingColor}
           onDelete={handleDeleteEditingTask}

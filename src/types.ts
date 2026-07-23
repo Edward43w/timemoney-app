@@ -5,6 +5,8 @@ export interface Task {
   id: string;
   title: string;
   isCompleted: boolean;
+  isDaily?: boolean;
+  dailyCompletedOn?: string;
   priority: Priority;
   durationMinutes: number; // Duration in minutes
   date?: string; // ISO Date string (YYYY-MM-DD) if scheduled
@@ -36,6 +38,17 @@ export interface Allocation {
   category: string;
   plannedAmount: number;
   month: string; // YYYY-MM
+}
+
+export interface PomodoroSession {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskColor: string;
+  startTime: string; // ISO date-time
+  endTime: string; // ISO date-time
+  focusSeconds: number;
+  targetMinutes: number;
 }
 
 export interface Budget {
