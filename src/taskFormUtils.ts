@@ -1,8 +1,8 @@
-import { Priority, Task } from './types';
+import { Priority, Recurrence, Task } from './types';
 
 export interface TaskFormState {
   title: string;
-  isDaily: boolean;
+  recurrence: Recurrence;
   durationDays: number;
   durationHours: number;
   durationMinutes: number;
@@ -16,7 +16,7 @@ export interface TaskFormState {
 
 export const DEFAULT_TASK_FORM: TaskFormState = {
   title: '',
-  isDaily: false,
+  recurrence: 'none',
   durationDays: 0,
   durationHours: 0,
   durationMinutes: 30,
@@ -93,7 +93,7 @@ export const formatDuration = (minutes: number) => {
 
 export const taskToFormState = (task: Task): TaskFormState => ({
   title: task.title,
-  isDaily: task.isDaily || false,
+  recurrence: task.recurrence ?? (task.isDaily ? 'daily' : 'none'),
   ...durationToParts(task.durationMinutes),
   priority: task.priority,
   date: task.date || '',
@@ -105,7 +105,8 @@ export const taskToFormState = (task: Task): TaskFormState => ({
 
 export const formStateToTaskFields = (form: TaskFormState) => ({
   title: form.title.trim(),
-  isDaily: form.isDaily,
+  recurrence: form.recurrence === 'none' ? undefined : form.recurrence,
+  isDaily: form.recurrence === 'daily',
   durationMinutes: Math.max(1, getDurationMinutes(form)),
   priority: form.priority,
   date: form.date || undefined,

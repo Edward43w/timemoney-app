@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Task, Priority } from '../types';
-import { formatDateISO, getRandomColor } from '../utils';
+import { formatDateISO, getRecurrenceLabel, getTaskRecurrence } from '../utils';
 import {
   DEFAULT_TASK_FORM,
   TaskFormState,
@@ -15,7 +15,6 @@ import {
   Clock,
   Flag,
   GripVertical,
-  Plus,
   Repeat2,
   Square,
   Trash2,
@@ -24,18 +23,17 @@ import { TaskFormModal } from './TaskFormModal';
 
 interface TaskListProps {
   tasks: Task[];
-  onAddTask: (task: Task) => void;
   onUpdateTask: (task: Task) => void;
   onDeleteTask: (id: string) => void;
   className?: string;
 }
 
-type TaskFilter = 'all' | 'daily' | 'scheduled' | 'unscheduled' | 'done';
+type TaskFilter = 'all' | 'recurring' | 'scheduled' | 'unscheduled' | 'done';
 type TaskSort = 'priority' | 'duration' | 'default';
 
 const FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [
   { value: 'all', label: '進行中' },
-  { value: 'daily', label: '每日' },
+  { value: 'recurring', label: '重複' },
   { value: 'scheduled', label: '已排程' },
   { value: 'unscheduled', label: '未排程' },
   { value: 'done', label: '已完成' },
@@ -51,20 +49,19 @@ const priorityScore: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
 
 export const TaskList: React.FC<TaskListProps> = ({
   tasks,
-  onAddTask,
   onUpdateTask,
   onDeleteTask,
   className,
 }) => {
   const [filter, setFilter] = useState<TaskFilter>('all');
   const [sortBy, setSortBy] = useState<TaskSort>('default');
-  const [newTask, setNewTask] = useState<TaskFormState>(DEFAULT_TASK_FORM);
-  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingTaskForm, setEditingTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
-  const [editingColor, setEditingColor] = useState('#3b82f6');
   const [today, setToday] = useState(() => formatDateISO(new Date()));
-  const isTaskDone = (task: Task) => task.isDaily ? task.dailyCompletedOn === today : task.isCompleted;
+  const isRecurring = (task: Task) => getTaskRecurrence(task) !== 'none';
+  const isTaskDone = (task: Task) => isRecurring(task)
+    ? task.recurrenceCompletedOn === today || task.dailyCompletedOn === today
+    : task.isCompleted;
 
   useEffect(() => {
     const now = new Date();
@@ -75,19 +72,19 @@ export const TaskList: React.FC<TaskListProps> = ({
 
   const counts = useMemo(() => {
     return {
-      all: tasks.filter((task) => !task.isDaily && !task.isCompleted).length,
-      daily: tasks.filter((task) => task.isDaily).length,
-      scheduled: tasks.filter((task) => !task.isDaily && !task.isCompleted && !!task.date).length,
-      unscheduled: tasks.filter((task) => !task.isDaily && !task.isCompleted && !task.date).length,
-      done: tasks.filter((task) => !task.isDaily && task.isCompleted).length,
+      all: tasks.filter((task) => !isRecurring(task) && !task.isCompleted).length,
+      recurring: tasks.filter(isRecurring).length,
+      scheduled: tasks.filter((task) => !isRecurring(task) && !task.isCompleted && !!task.date).length,
+      unscheduled: tasks.filter((task) => !isRecurring(task) && !task.isCompleted && !task.date).length,
+      done: tasks.filter((task) => !isRecurring(task) && task.isCompleted).length,
     };
   }, [tasks]);
 
   const sortedTasks = useMemo(() => {
     return [...tasks]
       .filter((task) => {
-        if (filter === 'daily') return !!task.isDaily;
-        if (task.isDaily) return false;
+        if (filter === 'recurring') return isRecurring(task);
+        if (isRecurring(task)) return false;
         if (filter === 'done') return task.isCompleted;
         if (task.isCompleted) return false;
         if (filter === 'scheduled') return !!task.date;
@@ -108,21 +105,6 @@ export const TaskList: React.FC<TaskListProps> = ({
   const openEditTask = (task: Task) => {
     setEditingTask(task);
     setEditingTaskForm(taskToFormState(task));
-    setEditingColor(task.color || '#3b82f6');
-  };
-
-  const handleAddTask = () => {
-    if (!newTask.title.trim()) return;
-
-    onAddTask({
-      id: '',
-      ...formStateToTaskFields(newTask),
-      isCompleted: false,
-      color: getRandomColor(),
-    });
-
-    setNewTask(DEFAULT_TASK_FORM);
-    setShowAddTaskModal(false);
   };
 
   const handleUpdateTask = () => {
@@ -131,7 +113,6 @@ export const TaskList: React.FC<TaskListProps> = ({
     onUpdateTask({
       ...editingTask,
       ...formStateToTaskFields(editingTaskForm),
-      color: editingColor,
     });
     setEditingTask(null);
   };
@@ -143,11 +124,13 @@ export const TaskList: React.FC<TaskListProps> = ({
   };
 
   const toggleComplete = (task: Task) => {
-    if (task.isDaily) {
+    if (isRecurring(task)) {
+      const completedToday = task.recurrenceCompletedOn === today || task.dailyCompletedOn === today;
       onUpdateTask({
         ...task,
         isCompleted: false,
-        dailyCompletedOn: task.dailyCompletedOn === today ? undefined : today,
+        recurrenceCompletedOn: completedToday ? undefined : today,
+        dailyCompletedOn: undefined,
       });
       return;
     }
@@ -182,7 +165,7 @@ export const TaskList: React.FC<TaskListProps> = ({
               key={option.value}
               onClick={() => setFilter(option.value)}
               className={`flex min-w-0 items-center justify-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${option.value === 'done' ? 'col-span-2' : ''} ${
-                filter === option.value ? 'bg-amber-300 text-gray-950' : 'bg-white/[0.035] text-gray-500 hover:bg-white/[0.06] hover:text-gray-200'
+                filter === option.value ? 'bg-accent text-accent-ink shadow-accent' : 'bg-white/[0.035] text-gray-500 hover:bg-white/[0.06] hover:text-gray-200'
               }`}
             >
               <span className="truncate">{option.label}</span>
@@ -198,7 +181,7 @@ export const TaskList: React.FC<TaskListProps> = ({
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as TaskSort)}
             aria-label="任務排序方式"
-            className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-amber-300/60"
+            className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-accent/60"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -216,24 +199,21 @@ export const TaskList: React.FC<TaskListProps> = ({
             return (
             <div
               key={task.id}
-              draggable={!taskDone && !task.isDaily}
+              draggable={!taskDone && !isRecurring(task)}
               onDragStart={(event) => handleDragStart(event, task)}
               onDragEnd={handleDragEnd}
               onClick={() => openEditTask(task)}
               className={`group relative flex gap-3 rounded-lg border p-3 transition-all ${
                 taskDone
                   ? 'cursor-pointer border-white/[0.06] bg-white/[0.02] text-gray-500 hover:border-white/[0.12]'
-                  : task.isDaily
-                    ? 'cursor-pointer border-white/[0.07] bg-[#0c0f13] hover:border-amber-300/30'
-                    : 'cursor-grab border-white/[0.07] bg-[#0c0f13] hover:border-amber-300/30 active:cursor-grabbing'
+                  : isRecurring(task)
+                    ? 'cursor-pointer border-white/[0.07] bg-[#0c0f13] hover:border-accent/30'
+                    : 'cursor-grab border-white/[0.07] bg-[#0c0f13] hover:border-accent/30 active:cursor-grabbing'
               }`}
             >
-              <div
-                className="absolute bottom-0 left-0 top-0 w-1 rounded-l-lg"
-                style={{ backgroundColor: task.color || '#3b82f6' }}
-              />
+              <div className="absolute bottom-0 left-0 top-0 w-1 rounded-l-lg bg-task-line" />
 
-              {!taskDone && !task.isDaily && (
+              {!taskDone && !isRecurring(task) && (
                 <div className="absolute left-2 top-1/2 z-10 -translate-y-1/2 cursor-grab text-gray-600 opacity-0 group-hover:opacity-100">
                   <GripVertical size={14} />
                 </div>
@@ -255,9 +235,9 @@ export const TaskList: React.FC<TaskListProps> = ({
                   {task.title}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                  {task.isDaily && (
+                  {isRecurring(task) && (
                     <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-200/80">
-                      <Repeat2 size={10} /> 每日
+                      <Repeat2 size={10} /> {getRecurrenceLabel(task)}
                     </span>
                   )}
                   <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{task.priority}</span>
@@ -304,32 +284,11 @@ export const TaskList: React.FC<TaskListProps> = ({
 
           {sortedTasks.length === 0 && (
             <div className="rounded-lg border border-dashed border-gray-700 p-6 text-center text-sm text-gray-500">
-              {filter === 'done' ? '還沒有已完成的任務。' : filter === 'daily' ? '還沒有每日任務，可以從新增任務開啟每日選項。' : '這裡還沒有任務，先新增一件今天想完成的事。'}
+              {filter === 'done' ? '還沒有已完成的任務。' : filter === 'recurring' ? '還沒有重複任務，可以在新增任務設定每日、每週或每月。' : '這裡還沒有任務，先新增一件今天想完成的事。'}
             </div>
           )}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => setShowAddTaskModal(true)}
-        className="absolute bottom-4 right-4 z-20 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-300 text-gray-950 shadow-[0_12px_30px_rgba(214,167,86,0.18)] transition-colors hover:bg-amber-200"
-        aria-label="Add task"
-      >
-        <Plus size={24} />
-      </button>
-
-      {showAddTaskModal && (
-        <TaskFormModal
-          title="新增任務"
-          description="先設定需要的時間，需要時再放進行事曆。"
-          value={newTask}
-          onChange={setNewTask}
-          onClose={() => setShowAddTaskModal(false)}
-          onSubmit={handleAddTask}
-          submitLabel="新增任務"
-        />
-      )}
 
       {editingTask && (
         <TaskFormModal
@@ -340,8 +299,6 @@ export const TaskList: React.FC<TaskListProps> = ({
           onClose={() => setEditingTask(null)}
           onSubmit={handleUpdateTask}
           submitLabel="儲存變更"
-          color={editingColor}
-          onColorChange={setEditingColor}
           onDelete={handleDeleteEditingTask}
         />
       )}

@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Allocation, Task, Expense, Income, PomodoroSession } from '../types';
-import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRange } from '../utils';
+import React, { useEffect, useState } from 'react';
+import { Task, Expense, Income, PomodoroSession } from '../types';
+import { isSameDay, getWeekRange, formatCurrency, formatDateISO, isTaskVisibleOnDate, getTaskTimeRangeForDate } from '../utils';
 import { ChevronLeft, ChevronRight, X, Clock, Calendar as CalendarIcon, DollarSign, Flag, Trash2 } from 'lucide-react';
 import { DEFAULT_TASK_FORM, TaskFormState, formStateToTaskFields, formatDuration, taskToFormState } from '../taskFormUtils';
 import { Button } from './Button';
 import { TaskFormModal } from './TaskFormModal';
-import { PomodoroPanel } from './PomodoroPanel';
 
 interface CalendarViewProps {
   viewMode: 'day' | 'week' | 'month';
@@ -14,21 +13,13 @@ interface CalendarViewProps {
   tasks: Task[];
   expenses: Expense[];
   incomes: Income[];
-  allocations: Allocation[];
-  expenseCategories: string[];
-  onUpdateExpenseCategories: (categories: string[]) => void;
   onTaskSchedule: (taskId: string, date: string, time: string) => void;
   onUpdateTask: (task: Task) => void;
   onDeleteTask: (id: string) => void;
   onDeleteExpense: (id: string) => void;
   onDeleteIncome: (id: string) => void;
-  onAddExpense: (expense: Expense) => void;
-  onAddIncome: (income: Income) => void;
   onViewModeChange: (mode: 'day' | 'week' | 'month') => void;
   pomodoroSessions: PomodoroSession[];
-  pomodoroStorageKey: string;
-  onAddPomodoroSession: (session: PomodoroSession) => void;
-  onDeletePomodoroSession: (id: string) => void;
 }
 
 const VIEW_LABELS = { day: '日', week: '週', month: '月' } as const;
@@ -40,82 +31,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   tasks,
   expenses,
   incomes,
-  allocations,
-  expenseCategories,
   onTaskSchedule,
   onUpdateTask,
   onDeleteTask,
   onDeleteExpense,
   onDeleteIncome,
-  onAddExpense,
-  onAddIncome,
   onViewModeChange,
   pomodoroSessions,
-  pomodoroStorageKey,
-  onAddPomodoroSession,
-  onDeletePomodoroSession,
 }) => {
   const [selectedDayDetails, setSelectedDayDetails] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingTaskForm, setEditingTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
-  const [editingColor, setEditingColor] = useState('#3b82f6');
-  const [newExpense, setNewExpense] = useState({ title: '', amount: 0, category: 'Food', date: formatDateISO(new Date()) });
-  const [newIncome, setNewIncome] = useState({ title: '', amount: 0, category: '', date: formatDateISO(new Date()) });
-  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
-
-  const getMonthKeyForDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-
-  const getEnvelopeOptionsForDate = useCallback((date: Date) => {
-    const monthKey = getMonthKeyForDate(date);
-    const envelopeOptions = allocations
-      .filter((allocation) => allocation.month === monthKey)
-      .map((allocation) => allocation.category);
-
-    return envelopeOptions.length > 0 ? envelopeOptions : expenseCategories;
-  }, [allocations, expenseCategories]);
-
   useEffect(() => {
-    const options = getEnvelopeOptionsForDate(newExpense.date ? new Date(`${newExpense.date}T00:00:00`) : new Date());
-    setNewExpense((current) => ({
-      ...current,
-      category: options.includes(current.category) ? current.category : options[0] || 'Other',
-    }));
-  }, [getEnvelopeOptionsForDate, newExpense.date]);
-
-  useEffect(() => {
-    if (!selectedDayDetails) return;
-    const date = formatDateISO(selectedDayDetails);
-    const options = getEnvelopeOptionsForDate(selectedDayDetails);
-    setNewIncome((current) => ({
-      ...current,
-      date,
-      category: options.includes(current.category) ? current.category : options[0] || 'Other',
-    }));
-  }, [getEnvelopeOptionsForDate, selectedDayDetails]);
-
-  useEffect(() => {
-    if (!selectedDayDetails && !showAddExpenseModal && !editingTask) return;
+    if (!selectedDayDetails && !editingTask) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setSelectedDayDetails(null);
-      setShowAddExpenseModal(false);
       setEditingTask(null);
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [editingTask, selectedDayDetails, showAddExpenseModal]);
-
-  const resetExpenseForm = (date = formatDateISO(new Date())) => {
-    const options = getEnvelopeOptionsForDate(new Date(`${date}T00:00:00`));
-    setNewExpense({ title: '', amount: 0, category: options[0] || 'Other', date });
-  };
+  }, [editingTask, selectedDayDetails]);
 
   const openTaskEditor = (task: Task) => {
     setEditingTask(task);
     setEditingTaskForm(taskToFormState(task));
-    setEditingColor(task.color || '#3b82f6');
   };
 
   const closeTaskEditor = () => {
@@ -127,7 +69,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     onUpdateTask({
       ...editingTask,
       ...formStateToTaskFields(editingTaskForm),
-      color: editingColor,
     });
     closeTaskEditor();
   };
@@ -289,10 +230,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, date)}
               onClick={() => setSelectedDayDetails(date)}
-              className={`relative min-h-0 border border-white/[0.07] p-1 md:p-2 flex flex-col justify-between group hover:bg-white/[0.045] transition-colors cursor-pointer ${isToday ? 'bg-amber-300/[0.06] ring-1 ring-amber-300/50' : 'bg-[#111419]'}`}
+              className={`relative min-h-0 border border-white/[0.07] p-1 md:p-2 flex flex-col justify-between group hover:bg-white/[0.045] transition-colors cursor-pointer ${isToday ? 'bg-accent-muted ring-1 ring-accent/45' : 'bg-[#111419]'}`}
             >
                <div className="flex justify-between items-start">
-                  <span className={`text-xs md:text-sm font-semibold w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-amber-300 text-gray-950' : 'text-gray-400'}`}>{d}</span>
+                  <span className={`text-xs md:text-sm font-semibold w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-accent text-accent-ink' : 'text-gray-400'}`}>{d}</span>
                </div>
 
                <div className="flex-1 mt-1 space-y-0.5 md:space-y-1 overflow-hidden">
@@ -300,8 +241,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   {dayTasks.slice(0, visibleTaskLimit).map(task => (
                       <div 
                         key={task.id} 
-                        className="text-[9px] md:text-[10px] rounded px-1 py-0.5 truncate text-white shadow-sm border-l-2 border-white/30 hover:brightness-110 cursor-pointer"
-                        style={{ backgroundColor: task.color || '#3b82f6' }}
+                        className="cursor-pointer truncate rounded border-l-2 border-task-line bg-task px-1 py-0.5 text-[9px] text-task-ink shadow-sm transition-colors hover:bg-task-hover md:text-[10px]"
                         onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}
                       >
                           {task.time && <span className="opacity-80 mr-1 hidden xs:inline">{task.time}</span>}
@@ -363,12 +303,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                            </span>
                                          )}
                                      </div>
-                                     <div 
-                                        className={`text-lg font-bold w-8 h-8 mx-auto flex items-center justify-center rounded-full cursor-pointer hover:bg-white/[0.08] ${isToday ? 'bg-amber-300 text-gray-950 hover:bg-amber-200' : 'text-white'}`}
+                                     <button
+                                        type="button"
+                                        className={`text-lg font-bold w-8 h-8 mx-auto flex items-center justify-center rounded-full cursor-pointer hover:bg-white/[0.08] ${isToday ? 'bg-accent text-accent-ink hover:bg-accent-strong' : 'text-white'}`}
                                         onClick={() => setSelectedDayDetails(d)}
+                                        aria-label={`查看 ${formatDateISO(d)} 當日資訊`}
                                      >
                                          {d.getDate()}
-                                     </div>
+                                     </button>
                                      <div className={`mt-1 text-xs font-mono font-medium ${
                                       totalSpent > 0 || totalIncome > 0 ? (netCashFlow >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-600'
                                      }`}>
@@ -389,15 +331,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     onDragOver={handleDragOver}
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, d)}
-                                    className="border-r border-gray-600 p-1 space-y-1 relative group hover:bg-gray-800/50 transition-colors" 
-                                    onClick={() => onDateChange(d)}
+                                    className="border-r border-gray-600 p-1 space-y-1 relative group hover:bg-gray-800/50 transition-colors cursor-pointer"
+                                    onClick={() => setSelectedDayDetails(d)}
                                  >
                                      {renderDeadlineChips(deadlines, 2)}
                                      {dayTasks.slice(0, visibleTaskLimit).map(task => (
                                          <div 
                                             key={task.id} 
-                                            className="p-1.5 rounded text-xs text-white cursor-pointer mb-1 shadow-sm hover:brightness-110 border border-white/10"
-                                            style={{ backgroundColor: task.color || '#3b82f6' }}
+                                            className="mb-1 cursor-pointer rounded border border-task-line/40 bg-task p-1.5 text-xs text-task-ink shadow-sm transition-colors hover:bg-task-hover"
                                             onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}
                                          >
                                              <div className="font-semibold truncate">{task.title}</div>
@@ -476,8 +417,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             {unscheduledDayTasks.map(t => (
                                 <div 
                                     key={t.id} 
-                                    className="px-2 py-1 rounded border border-white/10 text-xs flex items-center gap-2 text-white cursor-pointer hover:brightness-110"
-                                    style={{ backgroundColor: t.color || '#3b82f6' }}
+                                    className="flex cursor-pointer items-center gap-2 rounded border border-task-line/40 bg-task px-2 py-1 text-xs text-task-ink transition-colors hover:bg-task-hover"
                                     onClick={() => openTaskEditor(t)}
                                 >
                                     {t.title}
@@ -506,7 +446,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      {/* Tasks Rendering */}
                      {dayTasks.map(task => {
                          if (!task.time) return null;
-                         const range = getTaskTimeRange(task.date!, task.time, task.durationMinutes);
+                         const range = getTaskTimeRangeForDate(task, currentDate);
                          if (!range) return null;
 
                          const dayStart = new Date(currentDate); dayStart.setHours(0,0,0,0);
@@ -519,11 +459,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                          return (
                              <div 
                                 key={task.id}
-                                className="absolute left-12 md:left-14 right-1 md:right-2 rounded p-1.5 md:p-2 shadow-lg z-10 overflow-hidden hover:z-20 hover:scale-[1.01] transition-all cursor-pointer border border-white/20"
+                                className="absolute left-12 right-1 z-10 cursor-pointer overflow-hidden rounded border border-task-line/45 bg-task p-1.5 shadow-lg transition-all hover:z-20 hover:scale-[1.01] hover:bg-task-hover md:left-14 md:right-2 md:p-2"
                                 style={{
                                     top: `${startMinutes}px`,
                                     height: `${Math.max(heightMinutes, 30)}px`,
-                                    backgroundColor: task.color || '#3b82f6'
                                 }}
                                 onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}
                              >
@@ -626,15 +565,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      ))}
                  </div>
               </section>
-
-              <PomodoroPanel
-                date={currentDate}
-                tasks={tasks}
-                sessions={pomodoroSessions}
-                storageKey={pomodoroStorageKey}
-                onAddSession={onAddPomodoroSession}
-                onDeleteSession={onDeletePomodoroSession}
-              />
              </div>
         </div>
     );
@@ -653,8 +583,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         onClose={closeTaskEditor}
         onSubmit={saveEditingTask}
         submitLabel="Save Changes"
-        color={editingColor}
-        onColorChange={setEditingColor}
         onDelete={deleteEditingTask}
       />
     );
@@ -664,7 +592,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const renderDayDetailModal = () => {
      if (!selectedDayDetails) return null;
      const { dayTasks, dayExpenses, dayIncomes, totalSpent, totalIncome, netCashFlow, deadlines } = getDayStats(selectedDayDetails);
-     const selectedDayEnvelopeOptions = getEnvelopeOptionsForDate(selectedDayDetails);
      
      return (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -701,7 +628,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             {dayTasks.length === 0 && <div className="text-sm text-gray-600 italic">No tasks scheduled</div>}
                             {dayTasks.map(t => (
                                 <div key={t.id} className="relative group cursor-pointer" onClick={() => { setSelectedDayDetails(null); openTaskEditor(t); }}>
-                                    <div className="absolute -left-[29px] top-1 w-3 h-3 rounded-full border-2 border-[#0b0d10]" style={{ backgroundColor: t.color || '#3b82f6' }}></div>
+                                    <div className="absolute -left-[29px] top-1 h-3 w-3 rounded-full border-2 border-[#0b0d10] bg-task-line"></div>
                                     <div className="text-white font-medium text-sm group-hover:text-blue-400 transition-colors">{t.title}</div>
                                     <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
                                         <span>{t.time ? t.time : 'All Day'}</span>
@@ -776,7 +703,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                      <div className="p-6 pt-2">
                         <div className="flex items-center justify-between mb-4">
                             <h4 className="text-sm font-bold text-gray-200 flex items-center gap-2">
-                                <DollarSign size={16} className="text-green-500" />
+                                <DollarSign size={16} className="text-red-400" />
                                 Expenses
                             </h4>
                             <span className={`text-sm font-mono font-bold ${totalSpent > 0 ? 'text-red-300' : 'text-gray-300'}`}>
@@ -787,17 +714,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <div className="space-y-3">
                             {dayExpenses.length === 0 && <div className="text-sm text-gray-600 italic">No expenses recorded</div>}
                             {dayExpenses.map(expense => (
-                                <div key={expense.id} className="flex justify-between items-center text-sm bg-gray-900/50 p-2 rounded border border-gray-600/50">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-gray-300">{expense.title}</span>
-                                            <span className="text-xs text-gray-500 bg-gray-700 px-2 py-1 rounded">
-                                                {expense.category}
-                                            </span>
-                                        </div>
+                                <div key={expense.id} className="flex items-center justify-between rounded border border-red-500/20 bg-red-500/10 p-2 text-sm">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-red-100">{expense.title}</div>
+                                        <div className="text-xs text-red-300/70">{expense.category}</div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-white font-mono">-{formatCurrency(expense.amount)}</span>
+                                        <span className="font-mono text-red-200">-{formatCurrency(expense.amount)}</span>
                                         <Button
                                             onClick={(event) => {
                                                 event.stopPropagation();
@@ -846,105 +769,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             </div>
                         </div>
                         
-                        {/* Add Expense Form */}
-                        <div className="mt-4 pt-3 border-t border-gray-600">
-                            <div className="space-y-3">
-                                 <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Expense title"
-                                        value={newExpense.title}
-                                        onChange={(e) => setNewExpense({...newExpense, title: e.target.value})}
-                                        className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
-                                    />
-                                    <input
-                                        type="number"
-                                        placeholder="Amount"
-                                        value={newExpense.amount || ''}
-                                        onChange={(e) => setNewExpense({...newExpense, amount: parseFloat(e.target.value) || 0})}
-                                        className="w-24 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
-                                    />
-                                </div>
-                                <div className="flex gap-2">
-                                    <select
-                                        value={newExpense.category}
-                                        onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}
-                                        className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
-                                    >
-                                        {selectedDayEnvelopeOptions.map((category) => (
-                                          <option key={category} value={category}>{category}</option>
-                                        ))}
-                                    </select>
-                                    <Button
-                                        onClick={() => {
-                                            if (newExpense.title && newExpense.amount > 0) {
-                                                onAddExpense({
-                                                    ...newExpense,
-                                                    category: selectedDayEnvelopeOptions.includes(newExpense.category) ? newExpense.category : selectedDayEnvelopeOptions[0] || 'Other',
-                                                    date: formatDateISO(selectedDayDetails!),
-                                                    id: Date.now().toString()
-                                                });
-                                                resetExpenseForm(formatDateISO(selectedDayDetails!));
-                                            }
-                                        }}
-                                        size="sm"
-                                        className="px-4"
-                                        disabled={!newExpense.title || newExpense.amount <= 0}
-                                    >
-                                        Add
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mt-4 border-t border-gray-600 pt-3">
-                            <div className="space-y-3">
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Income title"
-                                        value={newIncome.title}
-                                        onChange={(e) => setNewIncome({...newIncome, title: e.target.value})}
-                                        className="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-emerald-500 focus:outline-none"
-                                    />
-                                    <input
-                                        type="number"
-                                        placeholder="Amount"
-                                        value={newIncome.amount || ''}
-                                        onChange={(e) => setNewIncome({...newIncome, amount: parseFloat(e.target.value) || 0})}
-                                        className="w-24 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:border-emerald-500 focus:outline-none"
-                                     />
-                                 </div>
-                                 <select
-                                     value={newIncome.category}
-                                     onChange={(e) => setNewIncome({ ...newIncome, category: e.target.value })}
-                                     className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                                     aria-label="收入分類"
-                                 >
-                                     {selectedDayEnvelopeOptions.map((category) => (
-                                         <option key={category} value={category}>{category}</option>
-                                     ))}
-                                 </select>
-                                 <Button
-                                    onClick={() => {
-                                        if (newIncome.title && newIncome.amount > 0) {
-                                             onAddIncome({
-                                                 ...newIncome,
-                                                 category: selectedDayEnvelopeOptions.includes(newIncome.category) ? newIncome.category : selectedDayEnvelopeOptions[0] || 'Other',
-                                                 date: formatDateISO(selectedDayDetails!),
-                                                 id: Date.now().toString()
-                                             });
-                                             setNewIncome({ title: '', amount: 0, category: selectedDayEnvelopeOptions[0] || 'Other', date: formatDateISO(selectedDayDetails!) });
-                                        }
-                                    }}
-                                    size="sm"
-                                    className="w-full bg-emerald-600 hover:bg-emerald-500"
-                                    disabled={!newIncome.title || newIncome.amount <= 0}
-                                >
-                                    Add Income
-                                </Button>
-                            </div>
-                        </div>
                      </div>
                  </div>
 
@@ -965,104 +789,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
              </div>
          </div>
      )
-  };
-
-  // --- ADD EXPENSE MODAL ---
-  const renderAddExpenseModal = () => {
-    if (!showAddExpenseModal) return null;
-    const modalEnvelopeOptions = getEnvelopeOptionsForDate(newExpense.date ? new Date(`${newExpense.date}T00:00:00`) : new Date());
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div role="dialog" aria-modal="true" aria-labelledby="expense-modal-title" className="w-full max-w-md rounded-2xl border border-white/[0.09] bg-[#12161b] p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-4">
-            <h3 id="expense-modal-title" className="text-xl font-semibold text-white">新增支出</h3>
-            <button onClick={() => setShowAddExpenseModal(false)} className="text-gray-400 hover:text-white" aria-label="關閉新增支出">
-              <X size={20} />
-            </button>
-          </div>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">名稱</label>
-              <input
-                type="text"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
-                placeholder="例如：午餐"
-                value={newExpense.title}
-                onChange={(e) => setNewExpense({ ...newExpense, title: e.target.value })}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">日期</label>
-              <input
-                type="date"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
-                value={newExpense.date}
-                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">金額</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
-                  placeholder="0.00"
-                  value={newExpense.amount || ''}
-                  onChange={(e) => setNewExpense({ ...newExpense, amount: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">分類</label>
-                <select
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
-                  value={newExpense.category}
-                  onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
-                >
-                  {modalEnvelopeOptions.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">分類同步自該月份的預算分配。</p>
-            
-            <div className="flex gap-3 mt-6">
-              <Button 
-                variant="ghost" 
-                onClick={() => setShowAddExpenseModal(false)}
-                className="flex-1"
-              >
-                取消
-              </Button>
-              <Button 
-                onClick={() => {
-                  if (newExpense.title && newExpense.amount > 0) {
-                    onAddExpense({
-                      ...newExpense,
-                      category: modalEnvelopeOptions.includes(newExpense.category) ? newExpense.category : modalEnvelopeOptions[0] || 'Other',
-                      date: newExpense.date || formatDateISO(new Date()),
-                      id: Date.now().toString()
-                    });
-                    resetExpenseForm();
-                    setShowAddExpenseModal(false);
-                  }
-                }}
-                disabled={!newExpense.title || newExpense.amount <= 0 || !newExpense.date}
-                className="flex-1"
-              >
-                新增支出
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -1097,7 +823,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 key={mode}
                 type="button"
                 onClick={() => onViewModeChange(mode)}
-                className={`rounded-md px-2 py-1 text-xs font-semibold transition-colors md:px-2.5 ${viewMode === mode ? 'bg-amber-300 text-gray-950' : 'text-gray-500 hover:bg-white/[0.06] hover:text-gray-200'}`}
+                className={`rounded-md px-2 py-1 text-xs font-semibold transition-colors md:px-2.5 ${viewMode === mode ? 'bg-accent text-accent-ink shadow-accent' : 'text-gray-500 hover:bg-white/[0.06] hover:text-gray-200'}`}
                 aria-pressed={viewMode === mode}
               >
                 {VIEW_LABELS[mode]}
@@ -1118,22 +844,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         {viewMode === 'day' && renderDay()}
       </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          resetExpenseForm();
-          setShowAddExpenseModal(true);
-        }}
-        className="absolute bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
-        aria-label="Log expense"
-      >
-        <DollarSign size={24} />
-      </button>
-
       {/* Render Modals */}
       {renderDayDetailModal()}
       {renderTaskEditModal()}
-      {renderAddExpenseModal()}
     </div>
   );
 };

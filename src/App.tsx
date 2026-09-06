@@ -6,6 +6,12 @@ import { CalendarView } from './components/CalendarView';
 import { TaskList } from './components/TaskList';
 import { LoginPage } from './components/LoginPage';
 import { Button } from './components/Button';
+import { MoneyEntryModal } from './components/MoneyEntryModal';
+import { PomodoroExperience } from './components/PomodoroExperience';
+import { QuickActionMenu } from './components/QuickActionMenu';
+import { TaskFormModal } from './components/TaskFormModal';
+import { IconButton } from './components/ui/IconButton';
+import { SegmentedControl, SegmentedOption } from './components/ui/SegmentedControl';
 import { 
   subscribeToTasks, 
   subscribeToExpenses, 
@@ -23,12 +29,20 @@ import {
   addAllocation as firebaseAddAllocation,
   updateAllocation as firebaseUpdateAllocation,
   deleteAllocation as firebaseDeleteAllocation,
-  updateExpenseCategories as firebaseUpdateExpenseCategories,
   addPomodoroSession as firebaseAddPomodoroSession,
   deletePomodoroSession as firebaseDeletePomodoroSession
 } from './firebaseService';
 import { onAuthChange, signOut } from './authService';
-import { getEndTimeFromDuration } from './taskFormUtils';
+import { DEFAULT_TASK_FORM, TaskFormState, formStateToTaskFields, getEndTimeFromDuration } from './taskFormUtils';
+import { DEFAULT_TASK_COLOR } from './utils';
+
+type AppTab = 'calendar' | 'finance' | 'focus';
+
+const APP_TABS: SegmentedOption<AppTab>[] = [
+  { value: 'calendar', label: '行事曆', icon: <CalendarIcon size={15} strokeWidth={1.8} /> },
+  { value: 'finance', label: '財務', icon: <Wallet size={15} strokeWidth={1.8} /> },
+  { value: 'focus', label: '專注', icon: <Timer size={15} strokeWidth={1.8} /> },
+];
 
 const FinanceDashboard = lazy(() => import('./components/FinanceDashboard').then((module) => ({
   default: module.FinanceDashboard,
@@ -39,16 +53,16 @@ const FocusDashboard = lazy(() => import('./components/FocusDashboard').then((mo
 })));
 
 const DashboardLoadingState = () => (
-  <div className="h-full overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101318] p-4 md:p-6" aria-label="正在載入頁面" aria-busy="true">
-    <div className="mb-5 h-16 animate-pulse rounded-xl bg-white/[0.05]" />
+  <div className="h-full overflow-hidden rounded-frame bg-surface p-4 shadow-panel ring-1 ring-line/70 md:p-6" aria-label="正在載入頁面" aria-busy="true">
+    <div className="mb-5 h-16 animate-pulse rounded-panel bg-surface-raised" />
     <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
       {Array.from({ length: 4 }, (_, index) => (
-        <div key={index} className="h-24 animate-pulse rounded-xl bg-white/[0.04]" />
+        <div key={index} className="h-24 animate-pulse rounded-panel bg-surface-raised" />
       ))}
     </div>
     <div className="grid gap-4 lg:grid-cols-2">
-      <div className="h-72 animate-pulse rounded-xl bg-white/[0.04]" />
-      <div className="h-72 animate-pulse rounded-xl bg-white/[0.04]" />
+      <div className="h-72 animate-pulse rounded-panel bg-surface-raised" />
+      <div className="h-72 animate-pulse rounded-panel bg-surface-raised" />
     </div>
     <span className="sr-only">正在載入功能頁面</span>
   </div>
@@ -62,9 +76,13 @@ const App: React.FC = () => {
   // --- State ---
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [activeTab, setActiveTab] = useState<'calendar' | 'finance' | 'focus'>('calendar');
+  const [activeTab, setActiveTab] = useState<AppTab>('calendar');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // For desktop
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showMoneyEntryModal, setShowMoneyEntryModal] = useState(false);
+  const [showTaskEntryModal, setShowTaskEntryModal] = useState(false);
+  const [showPomodoroModal, setShowPomodoroModal] = useState(false);
+  const [newTaskForm, setNewTaskForm] = useState<TaskFormState>(DEFAULT_TASK_FORM);
 
   // Firebase 即時資料
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -170,6 +188,23 @@ const App: React.FC = () => {
     }
   };
 
+  const openTaskEntryModal = () => {
+    setNewTaskForm(DEFAULT_TASK_FORM);
+    setShowTaskEntryModal(true);
+  };
+
+  const submitTaskEntry = () => {
+    if (!newTaskForm.title.trim()) return;
+    void handleAddTask({
+      id: '',
+      ...formStateToTaskFields(newTaskForm),
+      isCompleted: false,
+      color: DEFAULT_TASK_COLOR,
+    });
+    setNewTaskForm(DEFAULT_TASK_FORM);
+    setShowTaskEntryModal(false);
+  };
+
   const handleDeleteIncome = async (incomeId: string) => {
     try {
       await firebaseDeleteIncome(incomeId);
@@ -201,14 +236,6 @@ const App: React.FC = () => {
       await firebaseDeleteAllocation(allocationId);
     } catch (error) {
       console.error('Failed to delete allocation:', error);
-    }
-  };
-
-  const handleUpdateExpenseCategories = async (categories: string[]) => {
-    try {
-      await firebaseUpdateExpenseCategories(categories);
-    } catch (error) {
-      console.error('Failed to update expense categories:', error);
     }
   };
 
@@ -255,21 +282,21 @@ const App: React.FC = () => {
   // Loading state
   if (loading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#0b0d10] px-6" aria-live="polite" aria-busy="true">
+      <div className="flex min-h-dvh items-center justify-center bg-canvas px-6" aria-live="polite" aria-busy="true">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-3">
-            <div className="h-10 w-10 animate-pulse rounded-xl bg-white/[0.08]" />
+            <div className="h-10 w-10 animate-pulse rounded-panel bg-surface-raised" />
             <div className="space-y-2">
-              <div className="h-3 w-28 animate-pulse rounded bg-white/[0.08]" />
-              <div className="h-2 w-20 animate-pulse rounded bg-white/[0.05]" />
+              <div className="h-3 w-28 animate-pulse rounded-detail bg-surface-raised" />
+              <div className="h-2 w-20 animate-pulse rounded-detail bg-surface" />
             </div>
           </div>
           <div className="space-y-3">
-            <div className="h-20 animate-pulse rounded-xl bg-white/[0.05]" />
+            <div className="h-20 animate-pulse rounded-panel bg-surface" />
             <div className="grid grid-cols-3 gap-3">
-              <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
-              <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
-              <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+              <div className="h-16 animate-pulse rounded-panel bg-surface" />
+              <div className="h-16 animate-pulse rounded-panel bg-surface" />
+              <div className="h-16 animate-pulse rounded-panel bg-surface" />
             </div>
           </div>
           <span className="sr-only">正在載入 TimeMoney</span>
@@ -284,15 +311,20 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-dvh min-h-dvh overflow-hidden bg-[#0b0d10] font-sans text-gray-200">
-      
+    <div className="flex h-dvh min-h-dvh overflow-hidden bg-canvas font-sans text-ink-soft">
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-control bg-accent px-4 py-2 font-semibold text-accent-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        跳至主要內容
+      </a>
+
       {/* Sidebar (Desktop) */}
-      <aside className={`hidden shrink-0 flex-col overflow-hidden bg-[#101318] transition-[width,border-color] duration-300 md:flex ${isSidebarOpen ? 'w-80 border-r border-white/[0.08]' : 'w-0 border-r border-transparent'}`}>
+      <aside className={`hidden shrink-0 flex-col overflow-hidden bg-canvas-raised transition-[width,border-color] duration-300 md:flex ${isSidebarOpen ? 'w-80 border-r border-line' : 'w-0 border-r border-transparent'}`}>
         {isSidebarOpen && (
             <TaskList 
                 className="h-full border-none"
                 tasks={tasks}
-                onAddTask={handleAddTask}
                 onUpdateTask={handleUpdateTask}
                 onDeleteTask={handleDeleteTask}
             />
@@ -303,59 +335,42 @@ const App: React.FC = () => {
       <main id="main-content" className="relative flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
         
         {/* Header */}
-        <header className="z-20 grid min-h-16 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-white/[0.08] bg-[#0b0d10]/90 px-3 backdrop-blur-xl md:px-5">
+        <header className="z-20 grid min-h-16 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-line bg-canvas/90 px-3 backdrop-blur-xl md:px-5">
           <div className="flex min-w-0 items-center gap-2 md:gap-3">
-            <button
+            <IconButton
               onClick={() => setIsMobileMenuOpen(true)}
-              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-gray-100 md:hidden"
-              aria-label="Open task list"
+              className="md:hidden"
+              aria-label="開啟任務清單"
             >
                <Menu size={20} />
-            </button>
-            <button
+            </IconButton>
+            <IconButton
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-gray-100 md:block"
-              aria-label="Toggle task sidebar"
+              className="hidden md:inline-grid"
+              aria-label={isSidebarOpen ? '收合任務清單' : '展開任務清單'}
               aria-pressed={isSidebarOpen}
             >
                <ListTodo size={20} />
-            </button>
+            </IconButton>
             <div className="hidden items-center gap-2 sm:flex">
-              <div className="grid h-8 w-8 place-items-center rounded-lg border border-amber-300/25 bg-amber-300/10 text-amber-200">
+              <div className="grid h-8 w-8 place-items-center rounded-control bg-accent-muted text-accent-strong ring-1 ring-accent/25">
                 <Clock3 size={16} strokeWidth={1.8} />
               </div>
-              <div className="truncate text-sm font-semibold tracking-[-0.02em] text-gray-100 md:text-base">TimeMoney</div>
+              <div className="truncate text-sm font-semibold tracking-[-0.025em] text-ink md:text-base">TimeMoney</div>
             </div>
           </div>
 
           <nav className="justify-self-center" aria-label="主要功能">
-            <div className="flex shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.035] p-1">
-              <button 
-                  onClick={() => setActiveTab('calendar')}
-                  className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all md:px-3 ${activeTab === 'calendar' ? 'bg-amber-300 text-gray-950 shadow-sm' : 'text-gray-500 hover:bg-white/[0.05] hover:text-gray-200'}`}
-                  aria-pressed={activeTab === 'calendar'}
-              >
-                  <CalendarIcon size={14} className="md:h-4 md:w-4" /> <span>行事曆</span>
-              </button>
-              <button 
-                  onClick={() => setActiveTab('finance')}
-                  className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all md:px-3 ${activeTab === 'finance' ? 'bg-amber-300 text-gray-950 shadow-sm' : 'text-gray-500 hover:bg-white/[0.05] hover:text-gray-200'}`}
-                  aria-pressed={activeTab === 'finance'}
-              >
-                  <Wallet size={14} className="md:h-4 md:w-4" /> <span>財務</span>
-              </button>
-              <button
-                  onClick={() => setActiveTab('focus')}
-                  className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all md:px-3 ${activeTab === 'focus' ? 'bg-amber-300 text-gray-950 shadow-sm' : 'text-gray-500 hover:bg-white/[0.05] hover:text-gray-200'}`}
-                  aria-pressed={activeTab === 'focus'}
-              >
-                  <Timer size={14} className="md:h-4 md:w-4" /> <span>專注</span>
-              </button>
-            </div>
+            <SegmentedControl<AppTab>
+              value={activeTab}
+              options={APP_TABS}
+              onChange={setActiveTab}
+              label="主要功能"
+            />
           </nav>
 
             <div className="flex shrink-0 items-center justify-self-end gap-2">
-              <span className="text-xs text-gray-400 hidden sm:block">{user.email}</span>
+              <span className="hidden max-w-44 truncate text-xs text-muted sm:block">{user.email}</span>
               <Button
                 onClick={handleLogout}
                 variant="ghost"
@@ -370,7 +385,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Scrollable Body */}
-        <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0d10] p-2 md:p-4">
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-canvas p-2.5 md:p-4">
            {activeTab === 'calendar' ? (
                <CalendarView 
                   viewMode={viewMode}
@@ -379,21 +394,13 @@ const App: React.FC = () => {
                   tasks={tasks}
                   expenses={expenses}
                   incomes={incomes}
-                  allocations={allocations}
-                  expenseCategories={expenseCategories}
-                  onUpdateExpenseCategories={handleUpdateExpenseCategories}
                   onTaskSchedule={handleScheduleTask}
                   onUpdateTask={handleUpdateTask}
                   onDeleteTask={handleDeleteTask}
                   onDeleteExpense={handleDeleteExpense}
                   onDeleteIncome={handleDeleteIncome}
-                  onAddExpense={handleAddExpense}
-                  onAddIncome={handleAddIncome}
                   onViewModeChange={setViewMode}
                   pomodoroSessions={pomodoroSessions}
-                  pomodoroStorageKey={`timemoney-pomodoro-${user.uid}`}
-                  onAddPomodoroSession={handleAddPomodoroSession}
-                  onDeletePomodoroSession={handleDeletePomodoroSession}
                />
            ) : (
                <Suspense fallback={<DashboardLoadingState />}>
@@ -402,9 +409,7 @@ const App: React.FC = () => {
                       expenses={expenses}
                       incomes={incomes}
                       allocations={allocations}
-                      onAddExpense={handleAddExpense}
                       onDeleteExpense={handleDeleteExpense}
-                      onAddIncome={handleAddIncome}
                       onDeleteIncome={handleDeleteIncome}
                       onAddAllocation={handleAddAllocation}
                       onUpdateAllocation={handleUpdateAllocation}
@@ -425,20 +430,59 @@ const App: React.FC = () => {
 
       </main>
 
+      <QuickActionMenu
+        onAddTask={openTaskEntryModal}
+        onAddMoney={() => setShowMoneyEntryModal(true)}
+        onStartFocus={() => setShowPomodoroModal(true)}
+      />
+
+      {showTaskEntryModal && (
+        <TaskFormModal
+          title="新增任務"
+          description="先設定需要的時間，需要時再放進行事曆。"
+          value={newTaskForm}
+          onChange={setNewTaskForm}
+          onClose={() => setShowTaskEntryModal(false)}
+          onSubmit={submitTaskEntry}
+          submitLabel="新增任務"
+        />
+      )}
+
+      {showMoneyEntryModal && (
+        <MoneyEntryModal
+          allocations={allocations}
+          expenseCategories={expenseCategories}
+          onAddExpense={handleAddExpense}
+          onAddIncome={handleAddIncome}
+          onClose={() => setShowMoneyEntryModal(false)}
+        />
+      )}
+
+      <PomodoroExperience
+        key={user.uid}
+        isOpen={showPomodoroModal}
+        tasks={tasks}
+        sessions={pomodoroSessions}
+        storageKey={`timemoney-pomodoro-${user.uid}`}
+        onAddSession={handleAddPomodoroSession}
+        onDeleteSession={handleDeletePomodoroSession}
+        onOpen={() => setShowPomodoroModal(true)}
+        onClose={() => setShowPomodoroModal(false)}
+      />
+
       {/* Mobile Drawer (Task List) */}
       {isMobileMenuOpen && (
           <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="任務清單">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
-              <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-xs flex-col border-r border-white/[0.08] bg-[#101318] shadow-2xl animate-slide-right">
-                  <div className="flex shrink-0 items-center justify-between border-b border-white/[0.08] p-4">
-                      <span className="text-lg font-semibold tracking-[-0.02em] text-white">任務清單</span>
-                      <button className="rounded-lg p-2 text-gray-400 hover:bg-white/[0.06] hover:text-white" onClick={() => setIsMobileMenuOpen(false)} aria-label="關閉任務清單"><X size={18} /></button>
+              <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
+              <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-xs animate-slide-right flex-col border-r border-line bg-canvas-raised shadow-float">
+                  <div className="flex shrink-0 items-center justify-between border-b border-line p-4">
+                      <span className="text-lg font-semibold tracking-[-0.025em] text-ink">任務清單</span>
+                      <IconButton onClick={() => setIsMobileMenuOpen(false)} aria-label="關閉任務清單"><X size={18} /></IconButton>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <TaskList 
                         className="h-full border-none"
                         tasks={tasks}
-                        onAddTask={handleAddTask}
                         onUpdateTask={handleUpdateTask}
                         onDeleteTask={handleDeleteTask}
                     />

@@ -1,11 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CalendarView } from '../../components/CalendarView';
-import { makeAllocation, makeSession, makeTask } from '../fixtures';
-
-vi.mock('../../components/PomodoroPanel', () => ({
-  PomodoroPanel: () => <div data-testid="pomodoro-panel">番茄鐘面板</div>,
-}));
+import { makeExpense, makeIncome, makeSession, makeTask } from '../fixtures';
 
 const renderCalendar = (overrides: Partial<React.ComponentProps<typeof CalendarView>> = {}) => {
   const props: React.ComponentProps<typeof CalendarView> = {
@@ -15,24 +11,13 @@ const renderCalendar = (overrides: Partial<React.ComponentProps<typeof CalendarV
     tasks: [],
     expenses: [],
     incomes: [],
-    allocations: [
-      makeAllocation({ category: 'Food' }),
-      makeAllocation({ id: 'living', category: 'Living' }),
-    ],
-    expenseCategories: ['Legacy category'],
-    onUpdateExpenseCategories: vi.fn(),
     onTaskSchedule: vi.fn(),
     onUpdateTask: vi.fn(),
     onDeleteTask: vi.fn(),
     onDeleteExpense: vi.fn(),
     onDeleteIncome: vi.fn(),
-    onAddExpense: vi.fn(),
-    onAddIncome: vi.fn(),
     onViewModeChange: vi.fn(),
     pomodoroSessions: [],
-    pomodoroStorageKey: 'calendar-pomodoro',
-    onAddPomodoroSession: vi.fn(),
-    onDeletePomodoroSession: vi.fn(),
     ...overrides,
   };
   return { props, ...render(<CalendarView {...props} />) };
@@ -73,28 +58,29 @@ describe('CalendarView', () => {
     expect(screen.queryByRole('heading', { name: '2026年7月22日' })).not.toBeInTheDocument();
   });
 
-  it('uses the selected month budget categories in quick expense entry', () => {
-    const { props } = renderCalendar();
-    fireEvent.click(screen.getByRole('button', { name: 'Log expense' }));
-    const dialog = screen.getByRole('dialog', { name: '新增支出' });
-    const category = within(dialog).getByRole('combobox');
-    expect(within(category).getByRole('option', { name: 'Food' })).toBeInTheDocument();
-    expect(within(category).getByRole('option', { name: 'Living' })).toBeInTheDocument();
-    expect(within(category).queryByRole('option', { name: 'Legacy category' })).not.toBeInTheDocument();
+  it('opens the day overview when a date is clicked in week view', () => {
+    renderCalendar({
+      viewMode: 'week',
+      expenses: [makeExpense({ title: '週間午餐', date: '2026-07-22' })],
+    });
 
-    fireEvent.change(within(dialog).getByPlaceholderText('例如：午餐'), {
-      target: { value: '咖啡' },
+    fireEvent.click(screen.getByRole('button', { name: '查看 2026-07-22 當日資訊' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('週間午餐')).toBeInTheDocument();
+  });
+
+  it('shows expense and income records as matching red and green rows without inline entry forms', () => {
+    renderCalendar({
+      viewMode: 'month',
+      expenses: [makeExpense({ title: '晚餐' })],
+      incomes: [makeIncome({ title: '獎金', date: '2026-07-22' })],
     });
-    fireEvent.change(within(dialog).getByPlaceholderText('0.00'), {
-      target: { value: '80' },
-    });
-    fireEvent.change(category, { target: { value: 'Living' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '新增支出' }));
-    expect(props.onAddExpense).toHaveBeenCalledWith(expect.objectContaining({
-      title: '咖啡',
-      amount: 80,
-      category: 'Living',
-    }));
+
+    fireEvent.click(screen.getByText('22'));
+    expect(screen.getByText('晚餐').closest('div[class*="border-red-500"]')).toBeInTheDocument();
+    expect(screen.getByText('獎金').closest('div[class*="border-emerald-500"]')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Expense title')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Income title')).not.toBeInTheDocument();
   });
 
   it('renders completed focus sessions on the actual day timeline', () => {
@@ -106,6 +92,7 @@ describe('CalendarView', () => {
       })],
     });
     expect(screen.getByText('實際 · 實作功能')).toBeInTheDocument();
+    expect(screen.queryByText('開始專注')).not.toBeInTheDocument();
   });
 
   it('schedules a dragged task into a day-view hour', () => {

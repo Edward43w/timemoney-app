@@ -8,17 +8,17 @@ import {
   Tooltip as RechartsTooltip,
 } from 'recharts';
 import { Allocation, DEFAULT_ALLOCATION_CATEGORIES, Expense, Income } from '../types';
-import { formatCurrency, formatDateISO, generateId } from '../utils';
+import { cn, formatCurrency, formatDateISO, generateId } from '../utils';
 import { Button } from './Button';
 import { CalendarDays, ChevronRight, DollarSign, Pencil, Plus, SlidersHorizontal, Trash2, TrendingUp, Wallet, X } from 'lucide-react';
+import { IconButton } from './ui/IconButton';
+import { Surface } from './ui/Surface';
 
 interface FinanceDashboardProps {
   expenses: Expense[];
   incomes: Income[];
   allocations: Allocation[];
-  onAddExpense: (expense: Expense) => void;
   onDeleteExpense: (expenseId: string) => void;
-  onAddIncome: (income: Income) => void;
   onDeleteIncome: (incomeId: string) => void;
   onAddAllocation: (allocation: Allocation) => void;
   onUpdateAllocation: (allocation: Allocation) => void;
@@ -27,20 +27,53 @@ interface FinanceDashboardProps {
   currentDate: Date;
 }
 
-type MoneyFormMode = 'income' | 'expense';
 type Transaction = (Income & { type: 'income' }) | (Expense & { type: 'expense' });
 
-const COLORS = ['#d6a756', '#789987', '#aa726a', '#75869a', '#8b819e', '#9b876e', '#6f9292', '#777d86'];
+const COLORS = [
+  'var(--color-chart-1)',
+  'var(--color-chart-2)',
+  'var(--color-chart-3)',
+  'var(--color-chart-4)',
+  'var(--color-chart-5)',
+  'var(--color-chart-6)',
+  'var(--color-chart-7)',
+  'var(--color-chart-8)',
+];
 
 const getMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+interface ExpenseTooltipPayload {
+  name?: string | number;
+  value?: string | number;
+  payload?: { name?: string | number };
+}
+
+export const ExpenseChartTooltip = ({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: ExpenseTooltipPayload[];
+}) => {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  const name = item.name ?? item.payload?.name ?? '';
+
+  return (
+    <div className="rounded-control border border-line bg-canvas-raised px-3 py-2 shadow-panel">
+      <div className="text-xs font-medium text-ink-soft">{String(name)}</div>
+      <div className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-accent-strong">
+        {formatCurrency(Number(item.value ?? 0))}
+      </div>
+    </div>
+  );
+};
 
 export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   expenses,
   incomes,
   allocations,
-  onAddExpense,
   onDeleteExpense,
-  onAddIncome,
   onDeleteIncome,
   onAddAllocation,
   onUpdateAllocation,
@@ -50,27 +83,23 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
 }) => {
   const monthKey = getMonthKey(currentDate);
   const monthLabel = currentDate.toLocaleDateString('zh-TW', { month: 'long', year: 'numeric' });
-  const [moneyMode, setMoneyMode] = useState<MoneyFormMode>('expense');
-  const [showMoneyModal, setShowMoneyModal] = useState(false);
   const [showAllocationModal, setShowAllocationModal] = useState(false);
   const [showTransactionsModal, setShowTransactionsModal] = useState(false);
-  const [moneyForm, setMoneyForm] = useState({ title: '', amount: 0, category: '', date: formatDateISO(new Date()) });
   const [allocationForm, setAllocationForm] = useState({ id: '', category: '', plannedAmount: 0 });
   const [recordFilters, setRecordFilters] = useState({ category: 'all', startDate: `${monthKey}-01`, endDate: formatDateISO(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)) });
 
   useEffect(() => {
-    if (!showMoneyModal && !showAllocationModal && !showTransactionsModal) return;
+    if (!showAllocationModal && !showTransactionsModal) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      setShowMoneyModal(false);
       setShowAllocationModal(false);
       setShowTransactionsModal(false);
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showAllocationModal, showMoneyModal, showTransactionsModal]);
+  }, [showAllocationModal, showTransactionsModal]);
 
   const monthlyExpenses = useMemo(() => {
     return expenses.filter((expense) => expense.date.startsWith(monthKey));
@@ -146,41 +175,6 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
     setShowTransactionsModal(true);
   };
 
-  const openMoneyModal = (mode: MoneyFormMode) => {
-    setMoneyMode(mode);
-    setMoneyForm({
-      title: '',
-      amount: 0,
-      category: budgetCategoryOptions[0] || 'Other',
-      date: formatDateISO(currentDate),
-    });
-    setShowMoneyModal(true);
-  };
-
-  const saveMoney = () => {
-    if (!moneyForm.title.trim() || moneyForm.amount <= 0 || !moneyForm.date) return;
-
-    if (moneyMode === 'income') {
-      onAddIncome({
-        id: generateId(),
-        title: moneyForm.title.trim(),
-        amount: moneyForm.amount,
-        category: budgetCategoryOptions.includes(moneyForm.category) ? moneyForm.category : budgetCategoryOptions[0] || 'Other',
-        date: moneyForm.date,
-      });
-    } else {
-      onAddExpense({
-        id: generateId(),
-        title: moneyForm.title.trim(),
-        amount: moneyForm.amount,
-        category: budgetCategoryOptions.includes(moneyForm.category) ? moneyForm.category : budgetCategoryOptions[0] || 'Other',
-        date: moneyForm.date,
-      });
-    }
-
-    setShowMoneyModal(false);
-  };
-
   const openNewAllocation = () => {
     const nextCategory = DEFAULT_ALLOCATION_CATEGORIES.find((category) => !monthlyAllocations.some((item) => item.category === category))
       || expenseCategories.find((category) => !monthlyAllocations.some((item) => item.category === category))
@@ -214,38 +208,30 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pb-24 pr-1 md:gap-5 md:pb-2">
-      <header className="flex shrink-0 flex-wrap items-end justify-between gap-3 border-b border-white/[0.08] px-1 pb-4 pt-2 md:px-2">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1680px] flex-col gap-4 overflow-y-auto pb-24 pr-1 md:gap-5 md:pb-2">
+      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4 px-1 pb-1 pt-2 md:px-2">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-gray-500">
-            <CalendarDays size={14} />
+          <div className="tm-kicker flex items-center gap-2">
+            <CalendarDays size={14} strokeWidth={1.8} />
             本月財務
           </div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{monthLabel}</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={() => openMoneyModal('income')}>
-            <Plus size={14} /> 收入
-          </Button>
-          <Button size="sm" onClick={() => openMoneyModal('expense')}>
-            <Plus size={14} /> 支出
-          </Button>
+          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.045em] text-ink">{monthLabel}</h1>
         </div>
       </header>
 
-      <div className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-4">
-        <StatCard label="收入" value={formatCurrency(totalIncome)} tone="emerald" sub={`${monthlyIncomes.length} 筆`} />
-        <StatCard label="支出" value={formatCurrency(totalSpent)} tone="red" sub={`${monthlyExpenses.length} 筆`} />
-        <StatCard label="淨現金流" value={formatCurrency(netCashFlow)} tone={netCashFlow >= 0 ? 'blue' : 'amber'} sub={netCashFlow >= 0 ? '本月結餘' : '本月缺口'} />
-        <StatCard label="未分配" value={formatCurrency(unallocated)} tone={unallocated >= 0 ? 'violet' : 'amber'} sub={`已規劃 ${formatCurrency(totalAllocated)}`} />
+      <div className="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-[1.35fr_repeat(3,minmax(0,1fr))]">
+        <StatCard label="淨現金流" value={formatCurrency(netCashFlow)} tone={netCashFlow >= 0 ? 'info' : 'accent'} sub={netCashFlow >= 0 ? '本月收入扣除支出後的結餘' : '本月支出高於收入'} emphasis />
+        <StatCard label="收入" value={formatCurrency(totalIncome)} tone="positive" sub={`${monthlyIncomes.length} 筆`} />
+        <StatCard label="支出" value={formatCurrency(totalSpent)} tone="negative" sub={`${monthlyExpenses.length} 筆`} />
+        <StatCard label="未分配" value={formatCurrency(unallocated)} tone={unallocated >= 0 ? 'focus' : 'accent'} sub={`已規劃 ${formatCurrency(totalAllocated)}`} />
       </div>
 
       <div className="grid shrink-0 grid-cols-1 gap-4 xl:h-[320px] xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="flex min-h-0 flex-col rounded-xl border border-white/[0.08] bg-[#12161b] p-4 md:rounded-2xl">
+        <Surface as="section" className="flex min-h-0 flex-col p-4 md:p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-white">預算分配</h2>
-              <p className="text-xs leading-5 text-gray-500">規劃本月各分類額度，記帳時可直接選擇歸屬。</p>
+              <h2 className="text-base font-semibold tracking-[-0.015em] text-ink">預算分配</h2>
+              <p className="mt-0.5 text-xs leading-5 text-muted">規劃各分類額度，記帳時直接選擇歸屬。</p>
             </div>
             <Button size="sm" onClick={openNewAllocation}>
               <Plus size={14} /> 新增分類
@@ -254,44 +240,47 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {allocationRows.length === 0 && (
-              <div className="rounded-lg border border-dashed border-gray-700 p-5 text-sm text-gray-500">
-                還沒有預算分配。可以先從生活、儲蓄或固定支出開始。
+              <div className="rounded-control border-l-2 border-accent/50 bg-canvas-raised px-4 py-5 text-sm leading-6 text-muted">
+                還沒有預算分配。先新增生活、儲蓄或固定支出，讓本月收入有清楚去向。
               </div>
             )}
             {allocationRows.map((allocation) => (
-              <div key={allocation.id} className="rounded-lg border border-gray-700 bg-gray-900/50 p-3">
+              <div key={allocation.id} className="group rounded-control bg-canvas-raised p-3 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 hover:bg-surface-muted hover:ring-line">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-white">{allocation.category}</div>
-                    <div className="text-xs text-gray-500">
+                    <div className="truncate text-sm font-semibold text-ink">{allocation.category}</div>
+                    <div className="mt-0.5 text-xs text-muted">
                       已使用 {formatCurrency(allocation.spent)}／分配 {formatCurrency(allocation.plannedAmount)}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button size="sm" variant="ghost" className="px-2" onClick={() => openEditAllocation(allocation)} aria-label={`編輯 ${allocation.category}`}>
+                    <IconButton size="sm" onClick={() => openEditAllocation(allocation)} aria-label={`編輯 ${allocation.category}`}>
                       <Pencil size={14} />
-                    </Button>
-                    <Button size="sm" variant="ghost" className="px-2 text-red-300 hover:text-red-200" onClick={() => onDeleteAllocation(allocation.id)} aria-label={`刪除 ${allocation.category}`}>
+                    </IconButton>
+                    <IconButton size="sm" tone="danger" onClick={() => onDeleteAllocation(allocation.id)} aria-label={`刪除 ${allocation.category}`}>
                       <Trash2 size={14} />
-                    </Button>
+                    </IconButton>
                   </div>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-gray-700">
+                <div className="h-1.5 overflow-hidden rounded-full bg-line">
                   <div
-                    className={`h-full rounded-full ${allocation.remaining >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
+                    className={`h-full rounded-full transition-[width] duration-300 ${allocation.remaining >= 0 ? 'bg-positive' : 'bg-negative'}`}
                     style={{ width: `${allocation.usedPercent}%` }}
                   />
                 </div>
-                <div className={`mt-2 text-xs font-medium ${allocation.remaining >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                <div className={`mt-2 text-xs font-medium ${allocation.remaining >= 0 ? 'text-positive' : 'text-negative'}`}>
                   {allocation.remaining >= 0 ? `剩餘 ${formatCurrency(allocation.remaining)}` : `超出 ${formatCurrency(Math.abs(allocation.remaining))}`}
                 </div>
               </div>
             ))}
           </div>
-        </section>
+        </Surface>
 
-        <section className="flex min-h-0 flex-col rounded-xl border border-white/[0.08] bg-[#12161b] p-4 md:rounded-2xl">
-          <h2 className="mb-4 text-lg font-semibold text-white">支出分布</h2>
+        <Surface as="section" className="flex min-h-0 flex-col p-4 md:p-5">
+          <div className="mb-2">
+            <h2 className="text-base font-semibold tracking-[-0.015em] text-ink">支出分布</h2>
+            <p className="mt-0.5 text-xs text-muted">本月花費流向</p>
+          </div>
           <div className="h-[260px] min-h-0 xl:h-auto xl:flex-1">
             {categoryData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -301,72 +290,72 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                       <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <RechartsTooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', color: '#fff' }} />
+                  <RechartsTooltip content={<ExpenseChartTooltip />} cursor={{ fill: 'transparent' }} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-gray-500">本月還沒有支出紀錄。</div>
+              <div className="flex h-full items-center justify-center text-sm text-muted">本月還沒有支出紀錄。</div>
             )}
           </div>
-        </section>
+        </Surface>
       </div>
 
-      <section className="flex min-h-[220px] flex-1 flex-col rounded-xl border border-white/[0.08] bg-[#12161b] p-4 md:rounded-2xl">
+      <Surface as="section" className="flex min-h-[220px] flex-1 flex-col p-4 md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">最近紀錄</h2>
-            <p className="mt-0.5 text-xs text-gray-500">最近 5 筆收支變動</p>
+            <h2 className="text-base font-semibold tracking-[-0.015em] text-ink">最近紀錄</h2>
+            <p className="mt-0.5 text-xs text-muted">最近 5 筆收支變動</p>
           </div>
-          <button type="button" onClick={openTransactionsModal} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-300/10">
+          <Button size="sm" variant="quiet" onClick={openTransactionsModal}>
             查看本月與篩選 <ChevronRight size={14} />
-          </button>
+          </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-          {recentTransactions.length === 0 && <div className="rounded-lg border border-dashed border-white/[0.1] p-5 text-sm text-gray-500">還沒有收支紀錄。</div>}
+          {recentTransactions.length === 0 && <div className="rounded-control border-l-2 border-accent/50 bg-canvas-raised px-4 py-5 text-sm text-muted">還沒有收支紀錄。新增第一筆收入或支出後，最近變動會顯示在這裡。</div>}
           {recentTransactions.map((item) => (
             <TransactionRow key={`${item.type}-${item.id}`} item={item} onDeleteIncome={onDeleteIncome} onDeleteExpense={onDeleteExpense} />
           ))}
         </div>
-      </section>
+      </Surface>
 
       {showTransactionsModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="transactions-title" className="flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-white/[0.09] bg-[#12161b] shadow-2xl md:h-[min(760px,88dvh)] md:rounded-2xl">
-            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/[0.08] px-5 py-4 md:px-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="transactions-title" className="flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-frame bg-surface shadow-float ring-1 ring-line md:h-[min(760px,88dvh)] md:rounded-frame">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 md:px-6">
               <div>
-                <div className="mb-1 flex items-center gap-2 text-xs font-semibold tracking-[0.1em] text-gray-500">
+                <div className="tm-kicker mb-1 flex items-center gap-2">
                   <SlidersHorizontal size={14} /> 收支查詢
                 </div>
-                <h2 id="transactions-title" className="text-xl font-semibold text-white">收支紀錄</h2>
+                <h2 id="transactions-title" className="text-xl font-semibold tracking-[-0.025em] text-ink">收支紀錄</h2>
               </div>
-              <button type="button" onClick={() => setShowTransactionsModal(false)} className="rounded-lg p-2 text-gray-400 hover:bg-white/[0.06] hover:text-white" aria-label="關閉收支紀錄">
+              <IconButton onClick={() => setShowTransactionsModal(false)} aria-label="關閉收支紀錄">
                 <X size={18} />
-              </button>
+              </IconButton>
             </div>
 
-            <div className="grid shrink-0 gap-3 border-b border-white/[0.08] bg-[#0f1217] px-5 py-4 sm:grid-cols-3 md:px-6">
-              <label className="space-y-1.5 text-xs text-gray-500">
+            <div className="grid shrink-0 gap-3 border-b border-line bg-canvas-raised px-5 py-4 sm:grid-cols-3 md:px-6">
+              <label className="space-y-1.5 text-xs text-muted">
                 <span>分類</span>
-                <select value={recordFilters.category} onChange={(event) => setRecordFilters({ ...recordFilters, category: event.target.value })} className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-sm text-gray-200 outline-none focus:border-amber-300/60">
+                <select value={recordFilters.category} onChange={(event) => setRecordFilters({ ...recordFilters, category: event.target.value })} className="tm-field text-sm">
                   <option value="all">全部分類</option>
                   {recordCategories.map((category) => <option key={category} value={category}>{category}</option>)}
                 </select>
               </label>
-              <label className="space-y-1.5 text-xs text-gray-500">
+              <label className="space-y-1.5 text-xs text-muted">
                 <span>開始日期</span>
-                <input type="date" value={recordFilters.startDate} onChange={(event) => setRecordFilters({ ...recordFilters, startDate: event.target.value })} className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-sm text-gray-200 outline-none focus:border-amber-300/60" />
+                <input type="date" value={recordFilters.startDate} onChange={(event) => setRecordFilters({ ...recordFilters, startDate: event.target.value })} className="tm-field text-sm" />
               </label>
-              <label className="space-y-1.5 text-xs text-gray-500">
+              <label className="space-y-1.5 text-xs text-muted">
                 <span>結束日期</span>
-                <input type="date" value={recordFilters.endDate} onChange={(event) => setRecordFilters({ ...recordFilters, endDate: event.target.value })} className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-sm text-gray-200 outline-none focus:border-amber-300/60" />
+                <input type="date" value={recordFilters.endDate} onChange={(event) => setRecordFilters({ ...recordFilters, endDate: event.target.value })} className="tm-field text-sm" />
               </label>
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col px-5 py-4 md:px-6">
-              <div className="mb-3 text-xs text-gray-500">符合條件：{filteredTransactions.length} 筆</div>
+              <div className="mb-3 text-xs text-muted">符合條件：{filteredTransactions.length} 筆</div>
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                {filteredTransactions.length === 0 && <div className="rounded-lg border border-dashed border-white/[0.1] p-8 text-center text-sm text-gray-500">這個日期區間沒有符合條件的紀錄。</div>}
+                {filteredTransactions.length === 0 && <div className="rounded-control bg-canvas-raised p-8 text-center text-sm text-muted">這個日期區間沒有符合條件的紀錄。</div>}
                 {filteredTransactions.map((item) => (
                   <TransactionRow key={`${item.type}-${item.id}`} item={item} onDeleteIncome={onDeleteIncome} onDeleteExpense={onDeleteExpense} />
                 ))}
@@ -376,68 +365,15 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
         </div>
       )}
 
-      {showMoneyModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="money-form-title" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-white/[0.09] bg-[#12161b] p-5 shadow-2xl md:rounded-2xl md:p-6">
-            <h2 id="money-form-title" className="mb-4 text-xl font-semibold text-white">{moneyMode === 'income' ? '新增收入' : '新增支出'}</h2>
-            <div className="space-y-4">
-              <input
-                type="text"
-                aria-label={moneyMode === 'income' ? '收入名稱' : '支出名稱'}
-                className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-white outline-none focus:border-amber-300/60"
-                placeholder={moneyMode === 'income' ? 'e.g. Salary' : 'e.g. Lunch'}
-                value={moneyForm.title}
-                onChange={(event) => setMoneyForm({ ...moneyForm, title: event.target.value })}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="number"
-                  aria-label="金額"
-                  min="0"
-                  step="0.01"
-                  className="rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-white outline-none focus:border-amber-300/60"
-                  placeholder="Amount"
-                  value={moneyForm.amount || ''}
-                  onChange={(event) => setMoneyForm({ ...moneyForm, amount: parseFloat(event.target.value) || 0 })}
-                />
-                <input
-                  type="date"
-                  aria-label="日期"
-                  className="rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-white outline-none focus:border-amber-300/60"
-                  value={moneyForm.date}
-                  onChange={(event) => setMoneyForm({ ...moneyForm, date: event.target.value })}
-                />
-              </div>
-              <select
-                aria-label="分類"
-                className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-white outline-none focus:border-amber-300/60"
-                value={moneyForm.category}
-                onChange={(event) => setMoneyForm({ ...moneyForm, category: event.target.value })}
-              >
-                {budgetCategoryOptions.map((category) => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
-              <div className="flex gap-2 pt-2">
-                <Button className="flex-1" variant="ghost" onClick={() => setShowMoneyModal(false)}>取消</Button>
-                <Button className="flex-1" onClick={saveMoney} disabled={!moneyForm.title || moneyForm.amount <= 0}>
-                  儲存
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showAllocationModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="allocation-form-title" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-white/[0.09] bg-[#12161b] p-5 shadow-2xl md:rounded-2xl md:p-6">
-            <h2 id="allocation-form-title" className="mb-4 text-xl font-semibold text-white">{allocationForm.id ? '編輯預算分配' : '新增預算分配'}</h2>
+          <div role="dialog" aria-modal="true" aria-labelledby="allocation-form-title" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-frame bg-surface p-5 shadow-float ring-1 ring-line md:rounded-frame md:p-6">
+            <h2 id="allocation-form-title" className="mb-5 text-xl font-semibold tracking-[-0.025em] text-ink">{allocationForm.id ? '編輯預算分配' : '新增預算分配'}</h2>
             <div className="space-y-4">
               <input
                 list="allocation-categories"
                 aria-label="預算分類"
-                className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-white outline-none focus:border-amber-300/60"
+                className="tm-field"
                 placeholder="分類名稱"
                 value={allocationForm.category}
                 onChange={(event) => setAllocationForm({ ...allocationForm, category: event.target.value })}
@@ -452,7 +388,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                 aria-label="規劃金額"
                 min="0"
                 step="0.01"
-                className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-white outline-none focus:border-amber-300/60"
+                className="tm-field"
                 placeholder="分配金額"
                 value={allocationForm.plannedAmount || ''}
                 onChange={(event) => setAllocationForm({ ...allocationForm, plannedAmount: parseFloat(event.target.value) || 0 })}
@@ -481,51 +417,70 @@ const TransactionRow = ({
   onDeleteIncome: (incomeId: string) => void;
   onDeleteExpense: (expenseId: string) => void;
 }) => (
-  <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-[#0d1116] px-3 py-2.5 text-sm">
+  <div className={cn(
+    'group flex items-center justify-between gap-3 rounded-control border-l-2 bg-canvas-raised px-3 py-2.5 text-sm transition-colors duration-200 hover:bg-surface-muted',
+    item.type === 'income' ? 'border-positive/55' : 'border-negative/55',
+  )}>
     <div className="min-w-0">
       <div className="flex items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${item.type === 'income' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
+        <span className={`text-[10px] font-bold tracking-[0.08em] ${item.type === 'income' ? 'text-positive' : 'text-negative'}`}>
           {item.type === 'income' ? '收入' : '支出'}
         </span>
-        <span className="truncate text-gray-200">{item.title}</span>
+        <span className="truncate font-medium text-ink-soft">{item.title}</span>
       </div>
-      <div className="mt-1 text-xs text-gray-500">{item.date} · {item.category}</div>
+      <div className="mt-1 text-xs text-muted">{item.date} · {item.category}</div>
     </div>
     <div className="flex shrink-0 items-center gap-2">
-      <span className={`font-mono font-semibold ${item.type === 'income' ? 'text-emerald-300' : 'text-red-300'}`}>
+      <span className={`tm-number font-semibold ${item.type === 'income' ? 'text-positive' : 'text-negative'}`}>
         {item.type === 'income' ? '+' : '-'}{formatCurrency(item.amount)}
       </span>
-      <Button
+      <IconButton
         size="sm"
-        variant="ghost"
-        className="px-2 text-gray-500 hover:text-red-300"
+        tone="danger"
         onClick={() => item.type === 'income' ? onDeleteIncome(item.id) : onDeleteExpense(item.id)}
         aria-label={`刪除 ${item.title}`}
       >
         <Trash2 size={14} />
-      </Button>
+      </IconButton>
     </div>
   </div>
 );
 
-const StatCard = ({ label, value, sub, tone }: { label: string; value: string; sub: string; tone: 'emerald' | 'red' | 'blue' | 'amber' | 'violet' }) => {
+type StatTone = 'positive' | 'negative' | 'info' | 'accent' | 'focus';
+
+const StatCard = ({
+  label,
+  value,
+  sub,
+  tone,
+  emphasis = false,
+  className,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone: StatTone;
+  emphasis?: boolean;
+  className?: string;
+}) => {
   const toneClasses = {
-    emerald: 'bg-emerald-400',
-    red: 'bg-red-400',
-    blue: 'bg-sky-400',
-    amber: 'bg-amber-300',
-    violet: 'bg-violet-300',
+    positive: 'bg-positive-muted text-positive',
+    negative: 'bg-negative-muted text-negative',
+    info: 'bg-info-muted text-info',
+    accent: 'bg-accent-muted text-accent',
+    focus: 'bg-focus-muted text-focus',
   };
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/[0.07] bg-[#12161b] p-4">
-      <div className={`absolute inset-x-0 top-0 h-px opacity-80 ${toneClasses[tone]}`} />
+    <div className={cn('relative min-w-0 overflow-hidden rounded-xl border border-white/[0.08] bg-[#12161b] p-4 md:p-5', emphasis && 'bg-[#151a1f]', className)}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold tracking-[0.08em] text-gray-400">{label}</span>
-        <span className="text-gray-500">{label === '收入' ? <Wallet size={16} /> : label === '支出' ? <DollarSign size={16} /> : <TrendingUp size={16} />}</span>
+        <span className="text-xs font-semibold tracking-[0.06em] text-muted">{label}</span>
+        <span className={cn('grid h-8 w-8 place-items-center rounded-control', toneClasses[tone])}>
+          {label === '收入' ? <Wallet size={15} strokeWidth={1.8} /> : label === '支出' ? <DollarSign size={15} strokeWidth={1.8} /> : <TrendingUp size={15} strokeWidth={1.8} />}
+        </span>
       </div>
-      <div className="mt-2 truncate font-mono text-2xl font-semibold tracking-[-0.04em] text-white">{value}</div>
-      <div className="mt-1 text-xs text-gray-500">{sub}</div>
+      <div className={cn('tm-number mt-2 truncate font-semibold text-ink', emphasis ? 'text-3xl' : 'text-2xl')}>{value}</div>
+      <div className="mt-1 truncate text-xs text-muted">{sub}</div>
     </div>
   );
 };

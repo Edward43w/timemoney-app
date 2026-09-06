@@ -54,7 +54,7 @@ describe('task form utilities', () => {
       endTime: '10:30',
     }));
     expect(form).toMatchObject({
-      isDaily: true,
+      recurrence: 'daily',
       durationHours: 1,
       durationMinutes: 30,
       date: '2026-07-22',
@@ -70,6 +70,7 @@ describe('task form utilities', () => {
       durationMinutes: 0,
     })).toEqual({
       title: '寫報告',
+      recurrence: undefined,
       isDaily: false,
       durationMinutes: 1,
       priority: 'medium',

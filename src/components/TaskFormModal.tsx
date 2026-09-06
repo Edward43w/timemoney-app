@@ -1,7 +1,6 @@
 import React, { useEffect, useId } from 'react';
 import { ArrowUpCircle, Calendar, ChevronDown, Flag, Repeat2, Trash2, X } from 'lucide-react';
-import { PRIORITIES, Priority } from '../types';
-import { TASK_COLORS } from '../utils';
+import { PRIORITIES, Priority, Recurrence } from '../types';
 import {
   TaskFormState,
   QUICK_DURATIONS,
@@ -13,6 +12,7 @@ import {
   getEndTimeFromDuration,
 } from '../taskFormUtils';
 import { Button } from './Button';
+import { formatDateISO } from '../utils';
 
 interface TaskFormModalProps {
   title: string;
@@ -22,10 +22,15 @@ interface TaskFormModalProps {
   onClose: () => void;
   onSubmit: () => void;
   submitLabel: string;
-  color?: string;
-  onColorChange?: (color: string) => void;
   onDelete?: () => void;
 }
+
+const RECURRENCE_OPTIONS: { value: Recurrence; label: string }[] = [
+  { value: 'none', label: '不重複' },
+  { value: 'daily', label: '每日' },
+  { value: 'weekly', label: '每週' },
+  { value: 'monthly', label: '每月' },
+];
 
 const TimeSelect = ({
   value,
@@ -41,7 +46,7 @@ const TimeSelect = ({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       aria-label={placeholder}
-      className="w-full appearance-none rounded-md border border-white/[0.09] bg-[#0b0d10] px-2.5 py-2 pr-8 text-xs text-white outline-none transition-colors focus:border-amber-300/60"
+      className="w-full appearance-none rounded-md border border-white/[0.09] bg-[#0b0d10] px-2.5 py-2 pr-8 text-xs text-white outline-none transition-colors focus:border-accent/60"
     >
       <option value="">{placeholder}</option>
       {TIME_OPTIONS.map((option) => (
@@ -62,12 +67,21 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   onClose,
   onSubmit,
   submitLabel,
-  color,
-  onColorChange,
   onDelete,
 }) => {
   const currentDuration = getDurationMinutes(value);
   const titleId = useId();
+  const needsFixedSchedule = value.recurrence === 'weekly' || value.recurrence === 'monthly';
+  const canSubmit = Boolean(value.title.trim()) && (!needsFixedSchedule || Boolean(value.date && value.time));
+  const anchorDate = value.date ? new Date(`${value.date}T00:00:00`) : null;
+
+  const updateRecurrence = (recurrence: Recurrence) => {
+    onChange({
+      ...value,
+      recurrence,
+      date: recurrence !== 'none' && !value.date ? formatDateISO(new Date()) : value.date,
+    });
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -116,6 +130,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canSubmit) return;
     onSubmit();
   };
 
@@ -143,12 +158,12 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               type="text"
               aria-label="任務名稱"
               placeholder="任務名稱"
-              className="min-w-0 flex-1 rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-gray-600 focus:border-amber-300/60"
+              className="min-w-0 flex-1 rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-gray-600 focus:border-accent/60"
               value={value.title}
               onChange={(event) => onChange({ ...value, title: event.target.value })}
               autoFocus
             />
-            <Button type="submit" size="sm" className="h-9 w-9 p-0" aria-label={submitLabel}>
+            <Button type="submit" size="sm" className="h-9 w-9 p-0" aria-label={submitLabel} disabled={!canSubmit}>
               <ArrowUpCircle size={18} />
             </Button>
           </div>
@@ -156,7 +171,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
           <div className="mb-3">
             <select
               aria-label="優先度"
-              className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-2 py-2 text-xs font-semibold text-white outline-none focus:border-amber-300/60"
+              className="w-full rounded-lg border border-white/[0.09] bg-[#0b0d10] px-2 py-2 text-xs font-semibold text-white outline-none focus:border-accent/60"
               value={value.priority}
               onChange={(event) => onChange({ ...value, priority: event.target.value as Priority })}
             >
@@ -168,22 +183,36 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
             </select>
           </div>
 
-          <label className="mb-3 flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-white/[0.09] bg-[#0b0d10] px-3 py-2.5">
-            <span className="flex min-w-0 items-center gap-2.5">
-              <Repeat2 size={16} className="shrink-0 text-amber-200" />
-              <span>
-                <span className="block text-sm font-medium text-gray-200">每日任務</span>
-                <span className="block text-[11px] text-gray-500">完成只記錄今天，明天會自動恢復</span>
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              className="peer sr-only"
-              checked={value.isDaily}
-              onChange={(event) => onChange({ ...value, isDaily: event.target.checked })}
-            />
-            <span className="relative h-6 w-11 shrink-0 rounded-full bg-gray-700 transition-colors after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-gray-300 after:transition-transform peer-checked:bg-amber-300 peer-checked:after:translate-x-5 peer-checked:after:bg-gray-950 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-300" />
-          </label>
+          <fieldset className="mb-3 rounded-lg border border-white/[0.09] bg-[#0b0d10] p-3">
+            <legend className="sr-only">重複規則</legend>
+            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-gray-300">
+              <Repeat2 size={14} className="text-accent-strong" /> 重複規則
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {RECURRENCE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => updateRecurrence(option.value)}
+                  className={`rounded-md px-2 py-2 text-xs font-medium transition-colors ${
+                    value.recurrence === option.value
+                      ? 'bg-accent text-accent-ink shadow-accent'
+                      : 'bg-white/[0.035] text-gray-500 hover:bg-white/[0.07] hover:text-gray-200'
+                  }`}
+                  aria-pressed={value.recurrence === option.value}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            {value.recurrence !== 'none' && (
+              <p className="mt-2 text-[11px] leading-5 text-gray-500">
+                {value.recurrence === 'daily' && '從首次日期起每天出現；未設定日期則立即開始。'}
+                {value.recurrence === 'weekly' && (anchorDate ? `每週${anchorDate.toLocaleDateString('zh-TW', { weekday: 'long' })}固定出現。` : '選擇首次日期與開始時間。')}
+                {value.recurrence === 'monthly' && (anchorDate ? `每月 ${anchorDate.getDate()} 日固定出現。` : '選擇首次日期與開始時間。')}
+              </p>
+            )}
+          </fieldset>
 
           <div className="mb-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3">
             <div className="mb-2 flex items-center justify-between text-xs">
@@ -198,7 +227,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   onClick={() => updateDuration(duration.minutes)}
                   className={`rounded-md px-2 py-1.5 text-xs transition-colors ${
                     currentDuration === duration.minutes
-                      ? 'bg-amber-300 text-gray-950'
+                      ? 'bg-accent text-accent-ink shadow-accent'
                       : 'bg-gray-800 text-gray-400 hover:text-gray-200'
                   }`}
                 >
@@ -212,7 +241,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 <input
                   type="number"
                   min="0"
-                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-amber-300/60"
+                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-accent/60"
                   value={value.durationDays}
                   onChange={(event) => updateDurationPart('durationDays', Number(event.target.value))}
                 />
@@ -222,7 +251,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 <input
                   type="number"
                   min="0"
-                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-amber-300/60"
+                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-accent/60"
                   value={value.durationHours}
                   onChange={(event) => updateDurationPart('durationHours', Number(event.target.value))}
                 />
@@ -233,7 +262,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   type="number"
                   min="0"
                   step="5"
-                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-amber-300/60"
+                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2 py-1.5 text-white outline-none focus:border-accent/60"
                   value={value.durationMinutes}
                   onChange={(event) => updateDurationPart('durationMinutes', Number(event.target.value))}
                 />
@@ -244,12 +273,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
           <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3">
             <div>
               <h4 className="mb-2 flex items-center gap-1 text-xs font-medium text-gray-300">
-                <Calendar size={12} /> 排程
+                <Calendar size={12} /> {value.recurrence === 'none' ? '排程' : '首次排程'}
               </h4>
               <div className="space-y-2">
                 <input
                   type="date"
-                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2.5 py-2 text-xs text-white outline-none focus:border-amber-300/60"
+                  aria-label={value.recurrence === 'none' ? '排程日期' : '首次日期'}
+                  className="w-full rounded-md border border-white/[0.09] bg-[#0b0d10] px-2.5 py-2 text-xs text-white outline-none focus:border-accent/60"
                   value={value.date}
                   onChange={(event) => onChange({ ...value, date: event.target.value })}
                 />
@@ -261,6 +291,9 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   <p className="text-[11px] text-gray-500">
                     已依所需時間同步：{value.time} - {value.endTime}
                   </p>
+                )}
+                {needsFixedSchedule && (!value.date || !value.time) && (
+                  <p className="text-[11px] font-medium text-red-300">每週與每月重複需要首次日期和開始時間。</p>
                 )}
               </div>
             </div>
@@ -285,33 +318,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
             </div>
           </div>
 
-          {color && onColorChange && (
-            <div className="my-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3">
-              <label className="mb-2 block text-xs font-medium text-gray-300">任務色彩</label>
-              <div className="flex flex-wrap gap-2">
-                {TASK_COLORS.map((taskColor) => (
-                  <button
-                    key={taskColor}
-                    type="button"
-                    className={`h-6 w-6 rounded-full border-2 ${
-                      color === taskColor ? 'scale-110 border-white' : 'border-transparent'
-                    }`}
-                    style={{ backgroundColor: taskColor }}
-                    onClick={() => onColorChange(taskColor)}
-                    aria-label={`設定任務色彩 ${taskColor}`}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="mt-4 flex gap-3">
             {onDelete && (
               <Button type="button" variant="danger" className="flex-1" onClick={onDelete}>
                 <Trash2 size={16} /> 刪除
               </Button>
             )}
-            <Button type="submit" className="flex-auto" disabled={!value.title.trim()}>
+            <Button type="submit" className="flex-auto" disabled={!canSubmit}>
               {submitLabel}
             </Button>
           </div>

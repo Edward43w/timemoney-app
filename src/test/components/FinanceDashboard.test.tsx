@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { FinanceDashboard } from '../../components/FinanceDashboard';
+import { ExpenseChartTooltip, FinanceDashboard } from '../../components/FinanceDashboard';
 import { makeAllocation, makeExpense, makeIncome } from '../fixtures';
 
 vi.mock('recharts', () => {
@@ -28,9 +28,7 @@ const renderDashboard = (overrides: Partial<React.ComponentProps<typeof FinanceD
       makeAllocation({ id: 'food-budget', category: 'Food', plannedAmount: 3000 }),
       makeAllocation({ id: 'living-budget', category: 'Living', plannedAmount: 12000 }),
     ],
-    onAddExpense: vi.fn(),
     onDeleteExpense: vi.fn(),
-    onAddIncome: vi.fn(),
     onDeleteIncome: vi.fn(),
     onAddAllocation: vi.fn(),
     onUpdateAllocation: vi.fn(),
@@ -43,6 +41,12 @@ const renderDashboard = (overrides: Partial<React.ComponentProps<typeof FinanceD
 };
 
 describe('FinanceDashboard', () => {
+  it('renders the expense tooltip with readable dark-theme text', () => {
+    render(<ExpenseChartTooltip active payload={[{ name: 'Food', value: 1590 }]} />);
+    expect(screen.getByText('Food')).toHaveClass('text-ink-soft');
+    expect(screen.getByText('$1,590')).toHaveClass('text-accent-strong');
+  });
+
   it('calculates the selected month summary', () => {
     renderDashboard();
     expect(screen.getByText('$15,000')).toBeInTheDocument();
@@ -51,54 +55,19 @@ describe('FinanceDashboard', () => {
     expect(screen.getByText('$0')).toBeInTheDocument();
   });
 
-  it('uses budget allocation categories for new expenses', () => {
-    const { props } = renderDashboard();
-    fireEvent.click(screen.getByRole('button', { name: '支出' }));
-
-    const dialog = screen.getByRole('dialog', { name: '新增支出' });
-    const category = within(dialog).getByRole('combobox', { name: '分類' });
-    expect(within(category).getByRole('option', { name: 'Food' })).toBeInTheDocument();
-    expect(within(category).getByRole('option', { name: 'Living' })).toBeInTheDocument();
-    expect(within(category).queryByRole('option', { name: 'Legacy category' })).not.toBeInTheDocument();
-
-    fireEvent.change(within(dialog).getByRole('textbox', { name: '支出名稱' }), {
-      target: { value: '晚餐' },
-    });
-    fireEvent.change(within(dialog).getByRole('spinbutton', { name: '金額' }), {
-      target: { value: '250' },
-    });
-    fireEvent.change(category, { target: { value: 'Living' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '儲存' }));
-
-    expect(props.onAddExpense).toHaveBeenCalledWith(expect.objectContaining({
-      title: '晚餐',
-      amount: 250,
-      category: 'Living',
-      date: '2026-07-22',
-    }));
+  it('renders each summary metric as an individual card', () => {
+    renderDashboard();
+    const cashFlowCard = screen.getByText('淨現金流').closest('.rounded-xl');
+    const incomeCard = screen.getAllByText('收入')[0].closest('.rounded-xl');
+    expect(cashFlowCard).toHaveClass('border', 'bg-[#151a1f]');
+    expect(incomeCard).toHaveClass('border', 'bg-[#12161b]');
+    expect(cashFlowCard).not.toBe(incomeCard);
   });
 
-  it('uses the same allocation categories for income', () => {
-    const { props } = renderDashboard();
-    fireEvent.click(screen.getByRole('button', { name: '收入' }));
-    const dialog = screen.getByRole('dialog', { name: '新增收入' });
-
-    fireEvent.change(within(dialog).getByRole('textbox', { name: '收入名稱' }), {
-      target: { value: '接案' },
-    });
-    fireEvent.change(within(dialog).getByRole('spinbutton', { name: '金額' }), {
-      target: { value: '3000' },
-    });
-    fireEvent.change(within(dialog).getByRole('combobox', { name: '分類' }), {
-      target: { value: 'Food' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: '儲存' }));
-
-    expect(props.onAddIncome).toHaveBeenCalledWith(expect.objectContaining({
-      title: '接案',
-      amount: 3000,
-      category: 'Food',
-    }));
+  it('does not render duplicate income or expense entry buttons', () => {
+    renderDashboard();
+    expect(screen.queryByRole('button', { name: '收入' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '支出' })).not.toBeInTheDocument();
   });
 
   it('filters the full transaction list by category and date', () => {

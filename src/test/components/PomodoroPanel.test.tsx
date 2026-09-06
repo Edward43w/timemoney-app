@@ -1,7 +1,35 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PomodoroPanel } from '../../components/PomodoroPanel';
+import { usePomodoroTimer } from '../../usePomodoroTimer';
 import { makeSession, makeTask } from '../fixtures';
+
+interface TimerHarnessProps {
+  date: Date;
+  tasks: ReturnType<typeof makeTask>[];
+  sessions: ReturnType<typeof makeSession>[];
+  storageKey: string;
+  onAddSession: (session: ReturnType<typeof makeSession>) => void;
+  onDeleteSession: (id: string) => void;
+  onTimerStarted?: () => void;
+}
+
+const TimerHarness = (props: TimerHarnessProps) => {
+  const timer = usePomodoroTimer({
+    date: props.date,
+    tasks: props.tasks,
+    sessions: props.sessions,
+    storageKey: props.storageKey,
+    onAddSession: props.onAddSession,
+  });
+  return (
+    <PomodoroPanel
+      timer={timer}
+      onDeleteSession={props.onDeleteSession}
+      onTimerStarted={props.onTimerStarted}
+    />
+  );
+};
 
 describe('PomodoroPanel', () => {
   const today = new Date(2026, 6, 23, 9, 0);
@@ -9,14 +37,15 @@ describe('PomodoroPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(today);
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  const renderPanel = (overrides: Partial<React.ComponentProps<typeof PomodoroPanel>> = {}) => {
-    const props: React.ComponentProps<typeof PomodoroPanel> = {
+  const renderPanel = (overrides: Partial<TimerHarnessProps> = {}) => {
+    const props: TimerHarnessProps = {
       date: today,
       tasks: [
         makeTask({ id: 'scheduled', title: '今日排程', date: '2026-07-23', time: '09:00' }),
@@ -29,7 +58,7 @@ describe('PomodoroPanel', () => {
       onDeleteSession: vi.fn(),
       ...overrides,
     };
-    return { props, ...render(<PomodoroPanel {...props} />) };
+    return { props, ...render(<TimerHarness {...props} />) };
   };
 
   it('offers only today scheduled tasks and daily tasks', () => {
@@ -96,10 +125,11 @@ describe('PomodoroPanel', () => {
     expect(screen.getByRole('button', { name: /開始專注/ })).toBeInTheDocument();
   });
 
-  it('prevents starting a timer while viewing another date', () => {
-    renderPanel({ date: new Date(2026, 6, 22) });
-    expect(screen.getByRole('button', { name: /開始專注/ })).toBeDisabled();
-    expect(screen.getByText('切回今天才能啟動計時器')).toBeInTheDocument();
+  it('notifies the global experience to minimize after starting', () => {
+    const onTimerStarted = vi.fn();
+    renderPanel({ onTimerStarted });
+    fireEvent.click(screen.getByRole('button', { name: /開始專注/ }));
+    expect(onTimerStarted).toHaveBeenCalledTimes(1);
   });
 
   it('shows, scrolls and deletes saved sessions', () => {

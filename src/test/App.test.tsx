@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { User } from 'firebase/auth';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
+import { makeTask } from './fixtures';
 
 const authMocks = vi.hoisted(() => ({
   onAuthChange: vi.fn(),
@@ -105,6 +106,48 @@ describe('App wiring', () => {
     await screen.findByTestId('calendar-view');
     fireEvent.click(screen.getByRole('button', { name: '登出' }));
     await waitFor(() => expect(authMocks.signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it('opens one shared income and expense form from the global money button', async () => {
+    render(<App />);
+    await screen.findByTestId('calendar-view');
+    fireEvent.click(screen.getByRole('button', { name: '展開快速操作' }));
+    fireEvent.click(screen.getByRole('button', { name: '新增收支' }));
+    expect(screen.getByRole('dialog', { name: '新增收支' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '支出' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收入' })).toBeInTheDocument();
+  });
+
+  it('opens task and focus tools from the global quick action menu', async () => {
+    firebaseMocks.subscribeToTasks.mockImplementation((callback: (value: ReturnType<typeof makeTask>[]) => void) => {
+      callback([makeTask({ id: 'daily-focus', title: '每日閱讀', isDaily: true })]);
+      return vi.fn();
+    });
+    render(<App />);
+    await screen.findByTestId('calendar-view');
+
+    fireEvent.click(screen.getByRole('button', { name: '展開快速操作' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '新增任務' }).at(-1)!);
+    expect(screen.getByRole('dialog', { name: '新增任務' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '任務名稱' }), {
+      target: { value: '閱讀英文' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: '新增任務' }).at(-1)!);
+    await waitFor(() => expect(firebaseMocks.addTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: '閱讀英文',
+      durationMinutes: 30,
+      isCompleted: false,
+    })));
+
+    fireEvent.click(screen.getByRole('button', { name: '展開快速操作' }));
+    fireEvent.click(screen.getByRole('button', { name: '開始專注' }));
+    expect(screen.getByRole('dialog', { name: '專注計時器' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /開始專注/ }));
+    expect(screen.queryByRole('dialog', { name: '專注計時器' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('進行中的專注：每日閱讀')).toBeInTheDocument();
+    expect(screen.getByText('25:00')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '暫停專注' }));
+    expect(screen.getByText('已暫停')).toBeInTheDocument();
   });
 
   it('shows the login page when there is no authenticated user', async () => {

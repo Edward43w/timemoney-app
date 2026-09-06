@@ -2,14 +2,60 @@
 
 @theme {
   --breakpoint-xs: 30rem;
-  --font-sans: "Avenir Next", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+  --font-sans: "Segoe UI Variable Display", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", "Roboto Mono", ui-monospace, monospace;
+
+  --color-canvas: #0a0c0e;
+  --color-canvas-raised: #0e1114;
+  --color-surface: #12161a;
+  --color-surface-raised: #171c21;
+  --color-surface-muted: #0f1316;
+  --color-line: #252b31;
+  --color-line-strong: #353d45;
+  --color-ink: #f1efe8;
+  --color-ink-soft: #c8c6be;
+  --color-muted: #858b91;
+  --color-subtle: #60676e;
+  --color-accent: #d6d0c4;
+  --color-accent-strong: #eee9df;
+  --color-accent-muted: #292722;
+  --color-accent-ink: #171512;
+  --color-positive: #79a88d;
+  --color-positive-muted: #14261e;
+  --color-negative: #cc7b72;
+  --color-negative-muted: #2b1718;
+  --color-info: #7f9ab4;
+  --color-info-muted: #14202b;
+  --color-focus: #9b84b9;
+  --color-focus-muted: #211a2b;
+  --color-task: #304a60;
+  --color-task-hover: #3a5870;
+  --color-task-line: #6f8fa8;
+  --color-task-ink: #f1efe8;
+  --color-chart-1: #d4a64f;
+  --color-chart-2: #79a88d;
+  --color-chart-3: #c77e72;
+  --color-chart-4: #7f9ab4;
+  --color-chart-5: #9b84b9;
+  --color-chart-6: #a48b70;
+  --color-chart-7: #6f9292;
+  --color-chart-8: #7d838a;
+
+  --radius-detail: 0.375rem;
+  --radius-control: 0.625rem;
+  --radius-panel: 1rem;
+  --radius-frame: 1.375rem;
+
+  --shadow-panel: 0 18px 48px rgb(1 4 7 / 0.2);
+  --shadow-float: 0 24px 72px rgb(1 4 7 / 0.48);
+  --shadow-accent: 0 10px 30px rgb(214 208 196 / 0.1);
 }
 
 :root {
   color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
 }
 
 html,
@@ -22,12 +68,12 @@ body,
 }
 
 body {
-  background-color: #0b0d10;
+  background-color: var(--color-canvas);
   background-image:
-    radial-gradient(circle at 12% -10%, rgb(214 167 86 / 8%), transparent 28rem),
-    linear-gradient(180deg, #0b0d10 0%, #0d1014 100%);
-  color: #e7e9ec;
-  font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+    radial-gradient(circle at 14% -12%, rgb(214 208 196 / 7%), transparent 30rem),
+    radial-gradient(circle at 92% 4%, rgb(127 154 180 / 4%), transparent 24rem),
+    linear-gradient(180deg, var(--color-canvas) 0%, #0c0f12 100%);
+  color: var(--color-ink-soft);
 }
 
 button,
@@ -37,37 +83,92 @@ textarea {
   font: inherit;
 }
 
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
 button:not(:disabled),
 [role="button"]:not([aria-disabled="true"]) {
   cursor: pointer;
 }
 
 :focus-visible {
-  outline: 2px solid #d6a756;
+  outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
 
 ::selection {
-  background: rgb(214 167 86 / 28%);
-  color: #fff7e6;
+  background: rgb(214 208 196 / 24%);
+  color: var(--color-ink);
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #18181b;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 4px;
+  background: var(--color-line-strong);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--color-muted);
+}
+
+@layer components {
+  .tm-field {
+    width: 100%;
+    min-height: 2.625rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-control);
+    background: var(--color-canvas-raised);
+    padding: 0.625rem 0.75rem;
+    color: var(--color-ink);
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .tm-field:hover {
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-muted);
+  }
+
+  .tm-field:focus {
+    border-color: color-mix(in srgb, var(--color-accent) 72%, transparent);
+    box-shadow: 0 0 0 3px rgb(214 208 196 / 9%);
+    outline: none;
+  }
+
+  .tm-field::placeholder {
+    color: var(--color-subtle);
+  }
+
+  .tm-kicker {
+    color: var(--color-muted);
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.14em;
+  }
+
+  .tm-number {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.035em;
+  }
+
+  .recharts-legend-item-text {
+    color: var(--color-muted) !important;
+    font-size: 0.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

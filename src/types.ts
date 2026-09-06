@@ -1,5 +1,6 @@
 export type ViewMode = 'day' | 'week' | 'month';
 export type Priority = 'high' | 'medium' | 'low';
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export interface Task {
   id: string;
@@ -7,6 +8,8 @@ export interface Task {
   isCompleted: boolean;
   isDaily?: boolean;
   dailyCompletedOn?: string;
+  recurrence?: Exclude<Recurrence, 'none'>;
+  recurrenceCompletedOn?: string;
   priority: Priority;
   durationMinutes: number; // Duration in minutes
   date?: string; // ISO Date string (YYYY-MM-DD) if scheduled

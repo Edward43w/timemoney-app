@@ -38,6 +38,19 @@ describe('date and formatting utilities', () => {
     expect(isTaskVisibleOnDate(task, new Date(2026, 6, 24))).toBe(false);
   });
 
+  it('shows recurring tasks only on their scheduled occurrences', () => {
+    const daily = { date: '2026-07-20', time: '09:00', durationMinutes: 30, recurrence: 'daily' as const };
+    const weekly = { date: '2026-07-20', time: '09:00', durationMinutes: 30, recurrence: 'weekly' as const };
+    const monthly = { date: '2026-07-22', time: '09:00', durationMinutes: 30, recurrence: 'monthly' as const };
+
+    expect(isTaskVisibleOnDate(daily, new Date(2026, 6, 23))).toBe(true);
+    expect(isTaskVisibleOnDate(daily, new Date(2026, 6, 19))).toBe(false);
+    expect(isTaskVisibleOnDate(weekly, new Date(2026, 6, 27))).toBe(true);
+    expect(isTaskVisibleOnDate(weekly, new Date(2026, 6, 28))).toBe(false);
+    expect(isTaskVisibleOnDate(monthly, new Date(2026, 7, 22))).toBe(true);
+    expect(isTaskVisibleOnDate(monthly, new Date(2026, 7, 23))).toBe(false);
+  });
+
   it('converts time to minutes after midnight', () => {
     expect(getMinutesFromMidnight(new Date(2026, 6, 22, 9, 45))).toBe(585);
   });

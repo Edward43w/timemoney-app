@@ -145,7 +145,7 @@ export const FocusDashboard: React.FC<FocusDashboardProps> = ({ sessions, curren
                 key={item}
                 type="button"
                 onClick={() => setPeriod(item)}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${period === item ? 'bg-amber-300 text-gray-950' : 'text-gray-500 hover:text-gray-200'}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${period === item ? 'bg-accent text-accent-ink shadow-accent' : 'text-gray-500 hover:text-gray-200'}`}
               >
                 {PERIOD_LABELS[item]}
               </button>

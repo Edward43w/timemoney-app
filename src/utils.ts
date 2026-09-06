@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Recurrence } from './types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -15,24 +16,7 @@ export const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-// --- Colors ---
-export const TASK_COLORS = [
-  '#ef4444', // Red
-  '#f97316', // Orange
-  '#f59e0b', // Amber
-  '#84cc16', // Lime
-  '#10b981', // Emerald
-  '#06b6d4', // Cyan
-  '#3b82f6', // Blue
-  '#6366f1', // Indigo
-  '#8b5cf6', // Violet
-  '#d946ef', // Fuchsia
-  '#f43f5e', // Rose
-];
-
-export const getRandomColor = () => {
-  return TASK_COLORS[Math.floor(Math.random() * TASK_COLORS.length)];
-};
+export const DEFAULT_TASK_COLOR = '#304a60';
 
 // Date Helpers
 
@@ -96,18 +80,76 @@ export const getTaskTimeRange = (dateStr: string, timeStr: string, durationMinut
     return { start, end };
 };
 
-export const isTaskVisibleOnDate = (task: { date?: string, time?: string, durationMinutes: number }, targetDate: Date) => {
-    if (!task.date) return false;
+interface SchedulableTask {
+    date?: string;
+    time?: string;
+    durationMinutes: number;
+    isDaily?: boolean;
+    recurrence?: Exclude<Recurrence, 'none'>;
+}
+
+export const getTaskRecurrence = (task: Pick<SchedulableTask, 'isDaily' | 'recurrence'>): Recurrence => (
+    task.recurrence ?? (task.isDaily ? 'daily' : 'none')
+);
+
+export const getRecurrenceLabel = (task: Pick<SchedulableTask, 'isDaily' | 'recurrence'>) => ({
+    none: '',
+    daily: '每日',
+    weekly: '每週',
+    monthly: '每月',
+}[getTaskRecurrence(task)]);
+
+const calendarDayNumber = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000;
+
+const isOccurrenceDate = (task: SchedulableTask, candidate: Date) => {
+    const recurrence = getTaskRecurrence(task);
+    if (recurrence === 'none') return Boolean(task.date) && formatDateISO(candidate) === task.date;
+
+    if (!task.date) return recurrence === 'daily';
+    const anchor = new Date(`${task.date}T00:00:00`);
+    const dayDifference = calendarDayNumber(candidate) - calendarDayNumber(anchor);
+    if (dayDifference < 0) return false;
+    if (recurrence === 'daily') return true;
+    if (recurrence === 'weekly') return dayDifference % 7 === 0;
+
+    const monthDifference = (candidate.getFullYear() - anchor.getFullYear()) * 12
+        + candidate.getMonth() - anchor.getMonth();
+    return monthDifference >= 0 && candidate.getDate() === anchor.getDate();
+};
+
+export const getTaskTimeRangeForDate = (task: SchedulableTask, targetDate: Date) => {
+    const recurrence = getTaskRecurrence(task);
+    if (recurrence === 'none') {
+        if (!task.date) return null;
+        return getTaskTimeRange(task.date, task.time || '00:00', task.durationMinutes);
+    }
+
+    const dayStart = new Date(targetDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(targetDate);
+    dayEnd.setHours(23, 59, 59, 999);
+    const lookbackDays = Math.ceil(task.durationMinutes / 1440) + 1;
+
+    for (let offset = 0; offset <= lookbackDays; offset += 1) {
+        const candidate = new Date(dayStart);
+        candidate.setDate(candidate.getDate() - offset);
+        if (!isOccurrenceDate(task, candidate)) continue;
+        const range = getTaskTimeRange(formatDateISO(candidate), task.time || '00:00', task.durationMinutes);
+        if (range && range.start < dayEnd && range.end > dayStart) return range;
+    }
+    return null;
+};
+
+export const isTaskVisibleOnDate = (task: SchedulableTask, targetDate: Date) => {
+    const range = getTaskTimeRangeForDate(task, targetDate);
+    if (!range) return false;
 
     // Normalize target date to midnight 00:00 - 23:59
     const dayStart = new Date(targetDate);
     dayStart.setHours(0, 0, 0, 0);
-    
+
     const dayEnd = new Date(targetDate);
     dayEnd.setHours(23, 59, 59, 999);
-
-    const range = getTaskTimeRange(task.date, task.time || '00:00', task.durationMinutes);
-    if (!range) return false;
 
     // Check overlap: TaskStart < DayEnd AND TaskEnd > DayStart
     return range.start < dayEnd && range.end > dayStart;
